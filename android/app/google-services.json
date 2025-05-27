@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "662740230443",
+    "project_id": "controlverde-89a24",
+    "storage_bucket": "controlverde-89a24.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:662740230443:android:a027d1c847a280d62ba56e",
+        "android_client_info": {
+          "package_name": "com.example.control_verde"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAe6LG87tn45IZUWgPImsgxEohvqye6MCs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
