@@ -174,6 +174,7 @@ class _PalletDetalleScreen extends State<PalletDetalleScreen> {
   Future<void> _insertarProductoSobrante(Producto productoSobrante) async {
     try {
       final reporte = Reporte(
+        id: '',
         ean: productoSobrante.ean,
         olpn: cajaAddOlpn.toInt().toString(),
         tim: widget.selectedPallet,
@@ -185,10 +186,9 @@ class _PalletDetalleScreen extends State<PalletDetalleScreen> {
         precioVigente: productoSobrante.precioVigente,
         costoPromedio: productoSobrante.costoPromedio,
         uEnviadas: 0,
-        cEnviadas: ((unidadesAddTim ?? 0) / productoSobrante.casePack),
         uRecibidas: unidadesAddTim ?? 0,
         fechavencimiento: '',
-        faltantes: '0',
+        observacion: 'AGREGADO',
       );
       await DatabaseHelper.instance.insertReportSinR(reporte);
       await _reCargaProductos();
@@ -1186,7 +1186,7 @@ class _PalletDetalleScreen extends State<PalletDetalleScreen> {
                                                         ),
                                                         TextSpan(
                                                           text:
-                                                              '${producto.cEnviadas}',
+                                                              '${producto.uEnviadas/producto.casePack}',
                                                           style: TextStyle(
                                                             fontWeight:
                                                                 FontWeight

@@ -8,15 +8,14 @@ class ReporteTim {
   bool? estado;
   final String? motivo;
 
-  ReporteTim({
-    this.id,
-    required this.tim,
-    required this.placa,
-    required this.localOrigen,
-    required this.localDestino,
-    required this.fechaEnvio,
-    this.motivo
-  });
+  ReporteTim(
+      {this.id,
+      required this.tim,
+      required this.placa,
+      required this.localOrigen,
+      required this.localDestino,
+      required this.fechaEnvio,
+      this.motivo});
 
   Map<String, dynamic> toMap() {
     return {
@@ -27,7 +26,6 @@ class ReporteTim {
       'local_destino': localDestino,
       'fecha_envio': fechaEnvio,
       'motivo': motivo,
-      
     };
   }
 
@@ -40,6 +38,17 @@ class ReporteTim {
       localDestino: map['local_destino'] as String,
       fechaEnvio: map['fecha_envio'] as String,
       motivo: map['motivo'] as String,
+    );
+  }
+  factory ReporteTim.fromJson(Map<String, dynamic> json) {
+    return ReporteTim(
+      id: json['id'],
+      tim: json['tim'],
+      placa: json['placa'],
+      localOrigen: json['localOrigen'],
+      localDestino: json['localDestino'],
+      fechaEnvio: json['fechaEnvio'],
+      motivo: json['motivo'],
     );
   }
 }

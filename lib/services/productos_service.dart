@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:control_verde/database/database_helper.dart';
+import 'package:control_verde/services/socket_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:control_verde/model/producto_model.dart';
 
@@ -11,7 +12,6 @@ class ProductoService {
     final url = Uri.parse('$baseUrl/buscar/$codigo');
 
     final response = await http.get(url);
-    print('Respuesta: ${response.body}');
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return Producto.fromJson(data['producto']);
@@ -62,7 +62,7 @@ class ProductoService {
   }
 
   Future<Producto?> crearProducto(Producto producto) async {
-    final url = Uri.parse('$baseUrl/agregar');
+    final url = Uri.parse('$baseUrl/add');
     final headers = {'Content-Type': 'application/json'};
 
     final body = jsonEncode({
@@ -82,14 +82,40 @@ class ProductoService {
 
     if (response.statusCode == 201 || response.statusCode == 200) {
       print('Producto creado con éxito: ${producto.sku}');
+      print(producto.ean);
+      print(producto.uMedida);
       final dbHelper = DatabaseHelper.instance;
-      await dbHelper.actualizarCamposReporteDesdeProducto(
-          producto.sku, producto);
+      await dbHelper.updateReporteDesdeServidor(
+          producto.sku, producto.ean, producto.uMedida);
+      
       return producto;
     } else {
       print('Error al crear producto: ${response.statusCode}');
       print(response.body);
       return null;
+    }
+  }
+
+  Future<bool> actualizarProducto(Producto producto) async {
+    final socketId = SocketService().socketId;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/updatep'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'sku': producto.sku,
+        'ean': producto.ean,
+        'uMedida': producto.uMedida,
+        'socketId': socketId,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      print('✅ Actualización exitosa');
+      return true;
+    } else {
+      print('❌ Error al actualizar: ${response.body}');
+      return false;
     }
   }
 

@@ -367,7 +367,7 @@ class _InventarioProducto extends State<InventarioProducto> {
                                                         ),
                                                         TextSpan(
                                                           text:
-                                                              '${producto.cEnviadas}',
+                                                              '${producto.uEnviadas/producto.casePack}',
                                                           style: TextStyle(
                                                             fontWeight:
                                                                 FontWeight

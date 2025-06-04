@@ -1,19 +1,22 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
 
 class loading {
   static final loading instance = loading._init();
   loading._init();
-  
+
   Future<BuildContext> showLoadingDialog(
       BuildContext context, String fileName) async {
-    BuildContext? dialogContext;
+    final completer = Completer<BuildContext>();
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) {
-        dialogContext = ctx;
+      builder: (BuildContext dialogContext) {
+        if (!completer.isCompleted) {
+          completer.complete(dialogContext);
+        }
         return Center(
           child: Container(
             padding: const EdgeInsets.all(20),
@@ -50,8 +53,6 @@ class loading {
       },
     );
 
-    await Future.delayed(Duration(milliseconds: 100));
-
-    return dialogContext!;
+    return completer.future;
   }
 }

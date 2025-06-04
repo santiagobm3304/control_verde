@@ -3,6 +3,7 @@ import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/screens/discrepancias/discrepancias_screen.dart';
 import 'package:control_verde/screens/donaciones/donaciones_screen.dart';
 import 'package:control_verde/screens/recepcion/recepcion_screen.dart';
+import 'package:control_verde/services/reporte_service.dart';
 
 import 'package:control_verde/utils/app_colors.dart';
 import 'package:control_verde/widgets/cardInicio.dart';
@@ -14,7 +15,9 @@ class RecepcionScreen extends StatelessWidget {
 
   Future<void> _showDialogSelectedAction(BuildContext context,
       {required String action, required String motivo}) async {
-    List<int> tims = await DatabaseHelper.instance.getTimsByMotivo(motivo);
+    final service = ReporteService();
+    print(motivo);
+    List<int> tims = await service.buscarPorMotivo(motivo);
     int? selectedTim;
 
     showDialog(

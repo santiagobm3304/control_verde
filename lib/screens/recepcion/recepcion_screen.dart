@@ -1,10 +1,15 @@
 import 'dart:io';
 
-import 'package:control_verde/database/database_helper.dart';
+import 'package:control_verde/model/detalle_reporte_model.dart';
 import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
+import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/services/productos_service.dart';
+import 'package:control_verde/services/reporte_service.dart';
+import 'package:control_verde/utils/alerts.dart';
+import 'package:control_verde/utils/loading.dart';
+import 'package:control_verde/services/socket_service.dart';
 import 'package:control_verde/utils/recepcion_producto_detalle.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/utils/app_colors.dart';
@@ -45,6 +50,10 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
     'Panadería': 'J06',
     'Platos Preparados': 'J07',
     'Pizzas': 'J070109',
+    'Lavado y Cuidado': 'J0201',
+    'Cuidado e Higiene': 'J0202',
+    'Mascotas': 'J0203',
+    'Alimentos Bebés': 'J0204',
     'Vestuario': 'J08',
     'Hogar': 'J09',
     'Bazar': 'J10',
@@ -57,45 +66,63 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   Producto? _productoGenernal;
   // bool _seleccionarTodos = false;
 
-  List<ReporteTim> reportesInfo = [];
+  ReporteTim? reportesInfo;
   TextEditingController _codigoController = TextEditingController();
   TextEditingController _descController = TextEditingController();
 
   List<String> _subDeptOptions = [];
 
   final TextEditingController _controllerAddTim = TextEditingController();
+  final alert = Alerts.instance;
 
   double? unidadesAddTim;
 
   @override
   void initState() {
     super.initState();
-    _cargarProductos();
+    SocketService().init();
+    final socket = SocketService().socket;
+
+    socket.on('producto-actualizado', (data) async {
+      print('🟡 Producto actualizado desde otro dispositivo: $data');
+      await _reCargaProductos();
+      _actualizarFiltro();
+      // Aquí actualizas tu lista o estado
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarProductos(); // ya se puede usar context
+    });
   }
 
   Future<void> _cargarProductos() async {
-    try {
-      final productos =
-          await DatabaseHelper.instance.getReportesByTim(widget.selectedTim);
-      final reporteInfo =
-          await DatabaseHelper.instance.getReporteTimByTim(widget.selectedTim);
+    final dialogContext = await loading.instance.showLoadingDialog(context, 'Cargando Productos');
 
-      setState(() {
-        _productos = productos;
-        _subDeptOptions =
-            productos.map((item) => item.subdpto).toSet().toList();
-        _productosFiltrados = productos;
-        reportesInfo = reporteInfo;
-      });
+    try {
+      final serviceDR = DetalleReporteService();
+      final serviceR = ReporteService();
+      final productos =
+          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+      reportesInfo = await serviceR.obtenerReporte(widget.selectedTim);
+
+      if (mounted) {
+        setState(() {
+          _productos = productos;
+          _subDeptOptions =
+              productos.map((item) => item.subdpto).toSet().toList();
+          _productosFiltrados = productos;
+        });
+      }
     } catch (error) {
-      print('Error al cargar productos: $error');
+      alert.showErrorDialog(context, 'Error al cargar productos');
+    } finally {
+      Navigator.pop(dialogContext);
     }
   }
 
   Future<void> _reCargaProductos() async {
     try {
-      final productos =
-          await DatabaseHelper.instance.getReportesByTim(widget.selectedTim);
+      final serviceDR = DetalleReporteService();
+      final productos = await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
 
       setState(() {
         _productos = productos;
@@ -109,33 +136,6 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
       print('Error al cargar productos: $error');
     }
   }
-
-  // void _actualizarFiltro() async {
-  //   setState(() {
-  //     _productosFiltrados = _productos.where((item) {
-  //       bool descripcionMatch = _descripcionFiltro == null ||
-  //           item.descripcion
-  //               .toLowerCase()
-  //               .contains(_descripcionFiltro!.toLowerCase());
-  //       bool eanMatch = _eanFiltro == null || _eanFiltro!.length <= 8
-  //           ? item.sku.contains(_eanFiltro ?? '')
-  //           : item.ean.contains(_eanFiltro ?? '');
-  //       bool subDeptMatch = _subDeptFiltro == null ||
-  //           item.subdpto.toLowerCase().contains(_subDeptFiltro!.toLowerCase());
-  //       return descripcionMatch && eanMatch && subDeptMatch;
-  //     }).toList();
-  //     _productosFiltrados
-  //         .sort((a, b) => a.descripcion.compareTo(b.descripcion));
-  //   });
-
-  //   if (_productosFiltrados.isEmpty) {
-  //     final productoGenal =
-  //         await DatabaseHelper.instance.getProductobyEan(_eanFiltro ?? '');
-  //     setState(() {
-  //       _productoGenernal = productoGenal;
-  //     });
-  //   }
-  // }
 
   String extraerCodigoCentral(String input) {
     String limpio =
@@ -191,12 +191,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         return;
       }
       final service = ProductoService();
-
-      // Si aún así no hay resultados, buscar en la BD
-      final productoGenal =
-          // await DatabaseHelper.instance.getProductobyEan(_eanFiltro!);
-          await service.obtenerProductoPorCodigo(_eanFiltro!);
-
+      final productoGenal = await service.obtenerProductoPorCodigo(_eanFiltro!);
       setState(() {
         _productoGenernal = productoGenal;
       });
@@ -205,14 +200,14 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
 
   Future<void> _cambiarEstadoMasa() async {
     bool confirmar = await _mostrarConfirmacion();
-
+    final serviceDR = DetalleReporteService();
     if (confirmar) {
       for (var producto in _productosFiltrados) {
         bool result;
         //if (activarTodo) {
         // Si activarTodo es true, activamos el switch
-        result = await DatabaseHelper.instance
-            .updateRecibidos(producto.id ?? 0, producto.uEnviadas);
+        result = await serviceDR.actualizarRecibidos(
+            producto.id, producto.uEnviadas);
         //}
 
         // else {
@@ -266,26 +261,21 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         false;
   }
 
-  Future<void> _insertarProductoSobrante(Producto productoSobrante) async {
+  Future<void> _insertarProductoSobrante(String sku) async {
     try {
-      final reporte = Reporte(
-        ean: productoSobrante.ean,
-        olpn: 'SOBRANTE',
+      final serviceDR = DetalleReporteService();
+      final reporteDR = DetalleReporte(
+        id: '',
         tim: widget.selectedTim,
-        descripcion: productoSobrante.descripcion,
-        subdpto: productoSobrante.subdpto,
-        sku: productoSobrante.sku,
-        casePack: productoSobrante.casePack,
-        uMedida: productoSobrante.uMedida,
-        precioVigente: productoSobrante.precioVigente,
-        costoPromedio: productoSobrante.costoPromedio,
+        olpn: 'SOBRANTE',
+        sku: sku,
         uEnviadas: 0,
-        cEnviadas: 0,
         uRecibidas: unidadesAddTim ?? 0,
         fechavencimiento: '',
-        faltantes: '0',
+        observacion: 'SOBRANTE',
       );
-      await DatabaseHelper.instance.insertReportSinR(reporte);
+      print(reporteDR);
+      await serviceDR.insertarDetalleReporte(reporteDR);
       await _reCargaProductos();
       _actualizarFiltro();
       AwesomeDialog(
@@ -301,7 +291,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         context: context,
         dialogType: DialogType.error,
         headerAnimationLoop: false,
-        title: 'Error',
+        title: 'Error !!!!!',
         desc: 'Hubo un problema al agregar el producto como sobrante. $e',
         btnOkOnPress: () {},
       ).show();
@@ -309,7 +299,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   }
 
   void _showReportDetails(BuildContext context, Reporte report) async {
-    final res = await showDialog(
+    await showDialog(
       context: context,
       builder: (BuildContext context) {
         return ReportDetailsDialog(
@@ -321,12 +311,6 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         );
       },
     );
-    print(res);
-    if (res == true) {
-      await _cargarProductos();
-      await _reCargaProductos();
-      _actualizarFiltro();
-    }
   }
 
   void _showExportDialog(BuildContext context) async {
@@ -409,21 +393,20 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
     var excel = Excel.createExcel();
     Sheet sheet = excel['Sheet1'];
     sheet.appendRow([TextCellValue('Preventores: '), TextCellValue(nombre)]);
+    sheet.appendRow([TextCellValue('Tim: '), IntCellValue(widget.selectedTim)]);
     sheet.appendRow(
-        [TextCellValue('Tim: '), IntCellValue(reportesInfo.first.tim)]);
-    sheet.appendRow(
-        [TextCellValue('Placa: '), TextCellValue(reportesInfo.first.placa!)]);
+        [TextCellValue('Placa: '), TextCellValue(reportesInfo?.placa ?? '')]);
     sheet.appendRow([
       TextCellValue('Origen: '),
-      TextCellValue(reportesInfo.first.localOrigen!)
+      TextCellValue(reportesInfo?.localOrigen ?? '')
     ]);
     sheet.appendRow([
       TextCellValue('Destino: '),
-      TextCellValue(reportesInfo.first.localDestino!)
+      TextCellValue(reportesInfo?.localDestino ?? '')
     ]);
     sheet.appendRow([
       TextCellValue('Fecha envío: '),
-      TextCellValue(reportesInfo.first.fechaEnvio!)
+      TextCellValue(reportesInfo?.fechaEnvio ?? '')
     ]);
 
     sheet.appendRow([TextCellValue('')]);
@@ -445,7 +428,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         TextCellValue(report.subdpto),
         TextCellValue(report.olpn),
         TextCellValue(report.descripcion),
-        DoubleCellValue(report.cEnviadas),
+        DoubleCellValue(report.uEnviadas / report.casePack),
         DoubleCellValue(report.uEnviadas),
         DoubleCellValue(report.uRecibidas),
         TextCellValue(report.fechavencimiento),
@@ -454,7 +437,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
 
     String formattedDate = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
 
-    String fileName = 'TIM_${reportesInfo.first.tim}_$formattedDate.xlsx';
+    String fileName = 'TIM_${widget.selectedTim}_$formattedDate.xlsx';
 
     try {
       final downloadDirectory = Directory('/storage/emulated/0/Download');
@@ -985,12 +968,12 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                           width: 15,
                                         ),
                                         TextButton.icon(
-                                          onPressed: () {
+                                          onPressed: () async {
                                             if (unidadesAddTim != null &&
                                                 unidadesAddTim! > 0 &&
                                                 _productoGenernal != null) {
-                                              _insertarProductoSobrante(
-                                                  _productoGenernal!);
+                                              await _insertarProductoSobrante(
+                                                  _productoGenernal!.sku);
                                               _controllerAddTim.clear();
                                             } else {
                                               AwesomeDialog(
@@ -1088,14 +1071,13 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                             activeColor: AppColors.verdeClaro,
                                             onChanged: (value) async {
                                               try {
+                                                final serviceDR =
+                                                    DetalleReporteService();
                                                 if (value) {
-                                                  bool result =
-                                                      await DatabaseHelper
-                                                          .instance
-                                                          .updateRecibidos(
-                                                              producto.id ?? 0,
-                                                              producto
-                                                                  .uEnviadas);
+                                                  bool result = await serviceDR
+                                                      .actualizarRecibidos(
+                                                          producto.id,
+                                                          producto.uEnviadas);
                                                   if (result) {
                                                     setState(() {
                                                       producto.fastRegister =
@@ -1108,12 +1090,11 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                                         'Error al actualizar los datos.');
                                                   }
                                                 } else {
-                                                  bool result =
-                                                      await DatabaseHelper
-                                                          .instance
-                                                          .updateRecibidos(
-                                                              producto.id ?? 0,
-                                                              0);
+                                                  final serviceDR =
+                                                      DetalleReporteService();
+                                                  bool result = await serviceDR
+                                                      .actualizarRecibidos(
+                                                          producto.id, 0);
                                                   if (result) {
                                                     setState(() {
                                                       producto.uRecibidas = 0;
@@ -1202,7 +1183,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                                         ),
                                                         TextSpan(
                                                           text:
-                                                              '${producto.cEnviadas}',
+                                                              '${producto.uEnviadas / producto.casePack}',
                                                           style: TextStyle(
                                                             fontWeight:
                                                                 FontWeight
@@ -1416,7 +1397,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Text(
-                                      'Cajas: ${(_productosFiltrados.fold(0.0, (previousValue, producto) => previousValue + producto.cEnviadas).toStringAsFixed(2))}',
+                                      'Cajas: ${(_productosFiltrados.fold(0.0, (previousValue, producto) => previousValue + (producto.uEnviadas / producto.casePack)).toStringAsFixed(2))}',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,

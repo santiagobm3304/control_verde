@@ -76,13 +76,12 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
       
       try {
         final service = ProductoService();
-        final producto = await service.crearProducto(nuevoProducto);
+        await service.actualizarProducto(nuevoProducto);
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Producto agregado con éxito')),
+          SnackBar(content: Text('Producto se actualizó con éxito')),
         );
-        
-        Navigator.pop(context, {'guardado': true, 'producto':producto});
+        Navigator.pop(context, {'guardado': true});
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al guardar el producto')),

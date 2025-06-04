@@ -1,5 +1,5 @@
 class Reporte {
-  final int? id;
+  String id;
   final int? tim;
   String olpn;
   final String subdpto;
@@ -11,14 +11,13 @@ class Reporte {
   double precioVigente;
   double costoPromedio;
   double uEnviadas;
-  double cEnviadas;
   double uRecibidas;
   String fechavencimiento;
-  String faltantes;
+  String observacion;
   bool fastRegister;
 
   Reporte({
-    this.id,
+    required this.id,
     this.tim,
     required this.olpn,
     required this.subdpto,
@@ -30,16 +29,15 @@ class Reporte {
     required this.precioVigente,
     required this.costoPromedio,
     required this.uEnviadas,
-    required this.cEnviadas,
     required this.uRecibidas,
     required this.fechavencimiento,
-    required this.faltantes,
+    required this.observacion,
     bool? fastRegister,
   }) : fastRegister = fastRegister ?? (uRecibidas != 0);
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
+      '_id': id,
       'tim': tim ?? 0,
       'olpn': olpn,
       'subdpto': subdpto,
@@ -51,19 +49,18 @@ class Reporte {
       'precioVigente': precioVigente,
       'costoPromedio': costoPromedio,
       'uEnviadas': uEnviadas,
-      'cEnviadas': cEnviadas,
       'uRecibidas': uRecibidas,
       'fechavencimiento': fechavencimiento,
-      'faltantes': faltantes,
+      'observacion': observacion,
     };
   }
 
   factory Reporte.fromMap(Map<String, dynamic> map) {
     return Reporte(
-      id: map['id'] as int?,
+      id: map['_id']?.toString() ?? '',
       tim: map['tim'] as int? ?? 0,
       olpn: map['olpn']?.toString() ?? '',
-      subdpto: map['subdpto']?.toString() ?? '',
+      subdpto: map['subdpto']?.toString() ?? '  ',
       ean: map.containsKey('ean') && map['ean'] != null
           ? map['ean'].toString()
           : '',
@@ -78,19 +75,58 @@ class Reporte {
       precioVigente: (map['precioVigente'] as num?)?.toDouble() ?? 0,
       costoPromedio: (map['costoPromedio'] as num?)?.toDouble() ?? 0,
       uEnviadas: (map['uEnviadas'] as num?)?.toDouble() ?? 0,
-      cEnviadas: (map['cEnviadas'] as num?)?.toDouble() ?? 0,
       uRecibidas: (map['uRecibidas'] as num?)?.toDouble() ?? 0,
       fechavencimiento:
           map.containsKey('fechavencimiento') && map['fechavencimiento'] != null
               ? map['fechavencimiento'].toString()
               : '',
-      faltantes: map.containsKey('faltantes') && map['faltantes'] != null
-          ? map['faltantes'].toString()
+      observacion: map.containsKey('observacion') && map['observacion'] != null
+          ? map['observacion'].toString()
           : '',
+    );
+  }
+  Map<String, dynamic> toJson() {
+    return {
+      '_id': id,
+      'tim': tim,
+      'olpn': olpn,
+      'subdpto': subdpto,
+      'ean': ean,
+      'sku': sku,
+      'descripcion': descripcion,
+      'casePack': casePack,
+      'uMedida': uMedida,
+      'precioVigente': precioVigente,
+      'costoPromedio': costoPromedio,
+      'uEnviadas': uEnviadas,
+      'uRecibidas': uRecibidas,
+      'fechavencimiento': fechavencimiento,
+      'observacion': observacion,
+      'fastRegister': fastRegister,
+    };
+  }
+
+  factory Reporte.fromJson(Map<String, dynamic> json) {
+    return Reporte(
+      id: json['_id'],
+      tim: json['tim'],
+      olpn: json['olpn'],
+      subdpto: json['subdpto'],
+      ean: json['ean'],
+      sku: json['sku'],
+      descripcion: json['descripcion'],
+      casePack: json['casePack'],
+      uMedida: json['uMedida'],
+      precioVigente: (json['precioVigente'] as num).toDouble(),
+      costoPromedio: (json['costoPromedio'] as num).toDouble(),
+      uEnviadas: (json['uEnviadas'] as num).toDouble(),
+      uRecibidas: (json['uRecibidas'] as num).toDouble(),
+      fechavencimiento: json['fechavencimiento'],
+      observacion: json['observacion'],
     );
   }
   @override
   String toString() {
-    return 'Reporte{id: $id, ean: $ean, tim: $tim, olpn: $olpn, uMedida: $uMedida, subdpto: $subdpto, sku: $sku, descripcion: $descripcion, casePack: $casePack, precioVigente: $precioVigente, costoPromedio: $costoPromedio, uEnviadas: $uEnviadas, cEnviadas: $cEnviadas, uRecibidas: $uRecibidas, fechavencimiento: $fechavencimiento, faltantes: $faltantes}';
+    return 'Reporte{id: $id, ean: $ean, tim: $tim, olpn: $olpn, uMedida: $uMedida, subdpto: $subdpto, sku: $sku, descripcion: $descripcion, casePack: $casePack, precioVigente: $precioVigente, costoPromedio: $costoPromedio, uEnviadas: $uEnviadas, uRecibidas: $uRecibidas, fechavencimiento: $fechavencimiento, observacion: $observacion}';
   }
 }

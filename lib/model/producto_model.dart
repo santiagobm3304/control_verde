@@ -1,4 +1,3 @@
-
 class Producto {
   final int? id;
   final String subdpto;
@@ -10,7 +9,7 @@ class Producto {
   final double costoPromedio;
   final double precioVigente;
   final int casePack;
-  final String uMedida; 
+  final String uMedida;
 
   Producto({
     this.id,
@@ -26,7 +25,8 @@ class Producto {
     required this.uMedida,
   });
 
-  Map<String, dynamic> toMap() {//toMap
+  Map<String, dynamic> toMap() {
+    //toMap
     return {
       'id': id,
       'sku': sku,
@@ -57,7 +57,7 @@ class Producto {
       uMedida: map['uMedida'] ?? '',
     );
   }
-   factory Producto.fromJson(Map<String, dynamic> json) {
+  factory Producto.fromJson(Map<String, dynamic> json) {
     return Producto(
       id: json['id'],
       subdpto: json['subdpto'],

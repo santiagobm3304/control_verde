@@ -1,13 +1,15 @@
 import 'package:control_verde/database/database_helper.dart';
+import 'package:control_verde/model/detalle_reporte_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
+import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/utils/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class ReportDetailsDialog extends StatefulWidget {
   final Reporte report;
   final VoidCallback onSave;
-  
+
   const ReportDetailsDialog(
       {Key? key, required this.report, required this.onSave})
       : super(key: key);
@@ -71,7 +73,6 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
       });
     }
   }
-  
 
   @override
   void dispose() {
@@ -245,7 +246,7 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
               SizedBox(width: 8),
               Expanded(
                 child: TextFormField(
-                  initialValue: '${widget.report.cEnviadas}',
+                  initialValue: '${widget.report.uEnviadas/widget.report.casePack}',
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
                     labelText: 'Cajas',
@@ -438,7 +439,7 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
           children: [
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop(nuevoProducto);
+                Navigator.of(context).pop();
               },
               style: TextButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -460,8 +461,9 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                           AgregarProductoScreen(reporte: widget.report),
                     ),
                   );
-                  if (response && response['guardado'] == true) {
-                    nuevoProducto = true;
+                  if (response != null && response['guardado'] == true) {
+                    widget.onSave();
+                    Navigator.of(context).pop();
                   }
                 },
                 style: TextButton.styleFrom(
@@ -475,31 +477,23 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
             SizedBox(width: 10),
             TextButton(
               onPressed: () async {
-                Reporte reporteActualizado = Reporte(
-                  ean: widget.report.ean,
+                final serviceDR = DetalleReporteService();
+                DetalleReporte reporteActualizado = DetalleReporte(
                   tim: widget.report.tim,
                   id: widget.report.id,
                   olpn: widget.report.olpn,
-                  subdpto: widget.report.subdpto,
                   sku: widget.report.sku,
-                  descripcion: widget.report.descripcion,
-                  casePack: widget.report.casePack,
-                  uMedida: widget.report.uMedida,
-                  costoPromedio: widget.report.costoPromedio,
-                  precioVigente: widget.report.precioVigente,
                   uEnviadas: widget.report.uEnviadas,
-                  cEnviadas: widget.report.cEnviadas,
                   uRecibidas: double.tryParse(_controller.text) ??
                       widget.report.uRecibidas,
                   fechavencimiento: dateController.text,
-                  faltantes: widget.report.faltantes,
+                  observacion: widget.report.observacion,
                 );
-                int result = await DatabaseHelper.instance
-                    .updateReporte(reporteActualizado);
-
+                int result = await serviceDR.actualizarDatosDetalle(reporteActualizado);
+                print(result);
                 if (result > 0) {
                   widget.onSave();
-                  Navigator.of(context).pop(nuevoProducto);
+                  Navigator.of(context).pop();
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error al actualizar el reporte')),

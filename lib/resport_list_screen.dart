@@ -183,7 +183,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
         TextCellValue(report.descripcion),
         TextCellValue(report.subdpto),
         DoubleCellValue(report.uEnviadas),
-        DoubleCellValue(report.cEnviadas),
+        DoubleCellValue(report.uEnviadas/report.casePack),
         DoubleCellValue(report.uRecibidas),
         TextCellValue(report.fechavencimiento),
       ]);
@@ -613,7 +613,7 @@ class _ReportListScreenState extends State<ReportListScreen> {
                                                   ),
                                                   TextSpan(
                                                     text:
-                                                        '${report.cEnviadas}', // Texto variable
+                                                        '${report.uEnviadas/report.casePack}', // Texto variable
                                                     style: TextStyle(
                                                       fontWeight: FontWeight
                                                           .normal, // Normal

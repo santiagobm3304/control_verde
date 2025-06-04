@@ -2,9 +2,16 @@ import 'dart:io';
 
 import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/inicio_screeen.dart';
+import 'package:control_verde/model/detalle_reporte_model.dart';
 import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
+import 'package:control_verde/services/detalle_reporte_service.dart';
+import 'package:control_verde/services/productos_service.dart';
+import 'package:control_verde/services/reporte_service.dart';
+import 'package:control_verde/services/socket_service.dart';
+import 'package:control_verde/utils/loading.dart';
+import 'package:control_verde/utils/alerts.dart';
 import 'package:control_verde/utils/recepcion_producto_detalle.dart';
 import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
@@ -51,40 +58,59 @@ class _ProductListScreenState extends State<ProductListScreen> {
   };
   // bool activarTodo = false;
   Producto? _productoGenernal;
-  List<ReporteTim> reportesInfo = [];
+  ReporteTim? reportesInfo;
   List<String> _subDeptOptions = [];
   final TextEditingController _controllerAddTim = TextEditingController();
   double? unidadesAddTim;
+  final alert = Alerts.instance;
   final TextEditingController _codigoController = TextEditingController();
   TextEditingController _descController = TextEditingController();
   @override
   void initState() {
     super.initState();
-    _cargarProductos();
+    SocketService().init();
+    final socket = SocketService().socket;
+
+    socket.on('producto-actualizado', (data) async {
+      print('🟡 Producto actualizado desde otro dispositivo: $data');
+      await _reCargaProductos();
+      _actualizarFiltro();
+      // Aquí actualizas tu lista o estado
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarProductos(); // ya se puede usar context
+    });
   }
 
   Future<void> _cargarProductos() async {
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Cargando Productos');
+
     try {
+      final serviceDR = DetalleReporteService();
+      final serviceR = ReporteService();
+
       final productos =
-          await DatabaseHelper.instance.getReportesByTim(widget.selectedTim);
-      final reporteInfo =
-          await DatabaseHelper.instance.getReporteTimByTim(widget.selectedTim);
+          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+      reportesInfo = await serviceR.obtenerReporte(widget.selectedTim);
       setState(() {
         _productos = productos;
         _subDeptOptions =
             productos.map((item) => item.subdpto).toSet().toList();
         _productosFiltrados = productos;
-        reportesInfo = reporteInfo;
       });
     } catch (error) {
-      print('Error al cargar productos: $error');
+      alert.showErrorDialog(context, 'Error al cargar productos');
+    } finally {
+      Navigator.pop(dialogContext);
     }
   }
 
   Future<void> _reCargaProductos() async {
     try {
+      final serviceDR = DetalleReporteService();
       final productos =
-          await DatabaseHelper.instance.getReportesByTim(widget.selectedTim);
+          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
 
       setState(() {
         _productos = productos;
@@ -118,8 +144,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
     });
 
     if (_productosFiltrados.isEmpty) {
-      final productoGenal =
-          await DatabaseHelper.instance.getProductobyEan(_eanFiltro ?? '');
+      final service = ProductoService();
+      final productoGenal = await service.obtenerProductoPorCodigo(_eanFiltro!);
       setState(() {
         _productoGenernal = productoGenal;
       });
@@ -128,24 +154,18 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   Future<void> _insertarProductoSobrante(Producto productoSobrante) async {
     try {
-      final reporte = Reporte(
-        ean: productoSobrante.ean,
-        olpn: 'DONACION',
+      final serviceDR = DetalleReporteService();
+      final reporteDR = DetalleReporte(
+        id: '',
         tim: widget.selectedTim,
-        descripcion: productoSobrante.descripcion,
-        subdpto: productoSobrante.subdpto,
+        olpn: 'DONACION',
         sku: productoSobrante.sku,
-        casePack: productoSobrante.casePack,
-        uMedida: productoSobrante.uMedida,
-        precioVigente: productoSobrante.precioVigente,
-        costoPromedio: productoSobrante.costoPromedio,
         uEnviadas: 0,
-        cEnviadas: 0,
         uRecibidas: unidadesAddTim ?? 0,
         fechavencimiento: '',
-        faltantes: '0',
+        observacion: 'DONACION',
       );
-      await DatabaseHelper.instance.insertReportSinR(reporte);
+      await serviceDR.insertarDetalleReporte(reporteDR);
       await _reCargaProductos();
       _actualizarFiltro();
       AwesomeDialog(
@@ -681,139 +701,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                           ),
                         ],
                       ),
-                      // SizedBox(height: 12),
-                      // Row(
-                      //   children: [
-                      //     Text('Seleccionar Todos'),
-                      //     Switch(
-                      //       value: _seleccionarTodos,
-                      //       onChanged: (value) async {
-                      //         try {
-                      //           // Usamos Future.wait para hacer todas las actualizaciones en paralelo
-                      //           List<Future> updateTasks = [];
-
-                      //           // Recorrer todos los productos y crear las tareas para actualizar
-                      //           for (var producto in _productosFiltrados) {
-                      //             bool result = value
-                      //                 ? await DatabaseHelper.instance
-                      //                     .updateRecibidos(
-                      //                         producto.id ?? 0, producto.unidades)
-                      //                 : await DatabaseHelper.instance
-                      //                     .updateRecibidos(producto.id ?? 0, 0);
-
-                      //             // Agregar la tarea al list de tareas
-                      //             updateTasks.add(
-                      //               Future.delayed(Duration.zero, () {
-                      //                 if (result) {
-                      //                   setState(() {
-                      //                     producto.fastRegister = value;
-                      //                     producto.recibidos =
-                      //                         value ? producto.unidades : 0;
-                      //                   });
-                      //                 } else {
-                      //                   _showAlert(
-                      //                       'Error al actualizar los datos.');
-                      //                 }
-                      //               }),
-                      //             );
-                      //           }
-
-                      //           // Esperar a que todas las tareas se completen
-                      //           await Future.wait(updateTasks);
-                      //           if (value) {
-                      //             setState(() {
-                      //               _seleccionarTodos = true;
-                      //             });
-                      //           } else {
-                      //             setState(() {
-                      //               _seleccionarTodos = false;
-                      //             });
-                      //           }
-
-                      //         } catch (e) {
-                      //           // Si ocurre un error inesperado, mostramos una alerta.
-                      //           _showAlert('Ocurrió un error: $e');
-                      //         }
-                      //       },
-                      //     ),
-                      //   ],
-                      // ),
-
-                      SizedBox(height: 12),
-                      // Row(
-                      //   mainAxisAlignment: MainAxisAlignment.start,
-                      //   children: [
-                      //     Text('Fecha Vecimiento: '),
-                      //   ],
-                      // ),
-                      // SizedBox(height: 4),
-                      // Row(
-                      //   children: [
-                      //     Expanded(
-                      //       child: TextFormField(
-                      //         controller: _dateDesdeController,
-                      //         readOnly: true,
-                      //         decoration: InputDecoration(
-                      //           labelText: " Desde",
-                      //           suffixIcon: IconButton(
-                      //               icon: _dateDesdeController.text.isEmpty
-                      //                   ? Icon(
-                      //                       Icons.calendar_today,
-                      //                       color: Colors.amber,
-                      //                     )
-                      //                   : Icon(
-                      //                       Icons.close,
-                      //                       color: Colors.red,
-                      //                     ),
-                      //               onPressed: () async {
-                      //                 if (_dateDesdeController.text.isNotEmpty) {
-                      //                   _dateDesdeController.clear();
-                      //                   _selectedDesdeDate = null;
-                      //                   _actualizarFiltro();
-                      //                 } else {
-                      //                   _selectDesdeDate(context);
-                      //                 }
-                      //               }),
-                      //           border: OutlineInputBorder(),
-                      //           contentPadding: EdgeInsets.symmetric(
-                      //               vertical: 8.0, horizontal: 8.0),
-                      //         ),
-                      //         onTap: () => _selectDesdeDate(context),
-                      //       ),
-                      //     ),
-                      //     SizedBox(width: 10),
-                      //     Expanded(
-                      //       child: TextFormField(
-                      //         controller: _dateHastaController,
-                      //         readOnly: true,
-                      //         decoration: InputDecoration(
-                      //           labelText: "Hasta ",
-                      //           suffixIcon: IconButton(
-                      //             icon: _dateHastaController.text.isEmpty
-                      //                 ? Icon(
-                      //                     Icons.calendar_today,
-                      //                     color: Colors.amber,
-                      //                   )
-                      //                 : Icon(Icons.close, color: Colors.red),
-                      //             onPressed: () async {
-                      //               if (_dateHastaController.text.isNotEmpty) {
-                      //                 _dateHastaController.clear();
-                      //                 _selectedHastaDate = null;
-                      //                 _actualizarFiltro();
-                      //               } else {
-                      //                 _selectHastaDate(context);
-                      //               }
-                      //             },
-                      //           ),
-                      //           border: OutlineInputBorder(),
-                      //           contentPadding: EdgeInsets.symmetric(
-                      //               vertical: 8.0, horizontal: 8.0),
-                      //         ),
-                      //         onTap: () => _selectHastaDate(context),
-                      //       ),
-                      //     ),
-                      //   ],
-                      // ),
                     ],
                   )),
               Expanded(

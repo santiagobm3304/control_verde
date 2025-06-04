@@ -93,10 +93,9 @@ class DatabaseHelper {
         precioVigente INTEGER,
         costoPromedio INTEGER,
         uEnviadas REAL,
-        cEnviadas REAL,
         uRecibidas REAL,
         fechavencimiento TEXT,
-        faltantes TEXT
+        observacion TEXT
       )
     ''';
     await db.execute(sql);
@@ -415,6 +414,20 @@ class DatabaseHelper {
     print(processedData);
     await db.insert('reporte', processedData);
   }
+  Future<void> insertReportsEnLote(List<Reporte> reportes) async {
+  final db = await instance.database;
+
+  final batch = db.batch();
+
+  for (final reporte in reportes) {
+    final processedData = reporte.toMap();
+    print(processedData); // Puedes comentar esto si no lo necesitas
+    batch.insert('reporte', processedData);
+  }
+
+  await batch.commit(noResult: true); // Ejecuta todos los inserts juntos
+}
+
 
   Future<void> insertReportSinR(Reporte reporte) async {
     final db = await instance.database;
@@ -449,7 +462,43 @@ class DatabaseHelper {
     );
   }
 
-  Future<bool> updateRecibidos(int id, double unidadesRecibidas) async {
+  Future<Reporte?> getReportePorSku(String sku) async {
+  final db = await instance.database;
+  final maps = await db.query(
+    'reporte',
+    where: 'sku = ?',
+    whereArgs: [sku],
+    limit: 1,
+  );
+
+  if (maps.isNotEmpty) {
+    return Reporte.fromMap(maps.first);
+  } else {
+    return null;
+  }
+}
+
+
+  Future<bool> updateReporteDesdeServidor(String sku, String ean, String uMedida) async {
+    final db = await instance.database;
+
+    try {
+      await db.update(
+        'reporte',
+        {'ean': ean,
+        'uMedida': uMedida},
+        where: 'sku = ?',
+        whereArgs: [sku],
+      );
+
+      return true;
+    } catch (e) {
+      print('Error al actualizar: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateRecibidos(String id, double unidadesRecibidas) async {
     final db = await instance.database;
 
     try {
@@ -471,7 +520,7 @@ class DatabaseHelper {
       String sku, Producto producto) async {
     final db = await instance.database;
 
-    await db.update(
+    final reporte = await db.update(
       'reporte',
       {
         'ean': producto.ean,
@@ -482,6 +531,7 @@ class DatabaseHelper {
       where: 'sku = ?',
       whereArgs: [sku],
     );
+    print(reporte);
   }
 
   Future<List<Reporte>> getReportes() async {
@@ -558,7 +608,7 @@ class DatabaseHelper {
   //         r.cajas,
   //         r.recibidos,
   //         r.fechavencimiento,
-  //         r.faltantes
+  //         r.observacion
   //       FROM
   //         reporte r
   //       LEFT JOIN
@@ -619,7 +669,7 @@ class DatabaseHelper {
 
       await txn.delete(
         'reporte_tim',
-        where: 'tim = ?',
+        where: 'tim = ?', 
         whereArgs: [tim],
       );
     });

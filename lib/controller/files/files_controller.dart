@@ -5,9 +5,11 @@ import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
+import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/services/productos_service.dart';
+import 'package:control_verde/services/reporte_service.dart';
 import 'package:control_verde/utils/alerts.dart';
-import 'package:control_verde/utils/loading_files.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
@@ -163,6 +165,7 @@ class FilesController {
         }
 
         final reporte = Reporte(
+          id: '',
           tim: tim,
           olpn: olpn,
           ean: ean,
@@ -174,10 +177,9 @@ class FilesController {
           costoPromedio: producto?.costoPromedio ?? 0,
           precioVigente: producto?.precioVigente ?? 0,
           uEnviadas: 0,
-          cEnviadas: cantidad / _parseDouble(producto?.casePack ?? 1),
           uRecibidas: cantidad,
           fechavencimiento: '',
-          faltantes: '',
+          observacion: '',
           fastRegister: false,
         );
 
@@ -276,22 +278,6 @@ class FilesController {
     }
   }
 
-  String extractValue(String? input) {
-    if (input == null || !input.contains(':')) return input ?? '';
-    return input.split(':').skip(1).join(':').trim();
-  }
-
-  int _parseInt(dynamic value) {
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '0') ?? 0;
-  }
-
-  // 🔹 Función auxiliar para convertir valores en double
-  double _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '0') ?? 0.0;
-  }
-
   Future<void> processExcelReport(String filePath) async {
     try {
       final file = await _validateFile(filePath);
@@ -299,22 +285,20 @@ class FilesController {
 
       final bytes = file.readAsBytesSync();
       final excel = Excel.decodeBytes(bytes);
-      final dbHelper = DatabaseHelper.instance;
+      final serviceR = ReporteService();
+      final serviceD = DetalleReporteService();
 
       if (!excel.tables.containsKey('Página1_1')) {
-        print(
-            '❌ Error: No se encontró la hoja "Página1_1" en el archivo Excel');
+        print('❌ Error: No se encontró la hoja "Página1_1"');
         return;
       }
 
       final sheet = excel.tables['Página1_1']!;
       if (sheet.rows.length < 10) {
-        print(
-            '⚠️ Advertencia: La hoja no tiene suficientes filas para procesar');
+        print('⚠️ La hoja tiene menos de 10 filas');
         return;
       }
 
-      // 🔹 Crear el objeto ReporteTim y guardarlo en la BD
       final reporteTim = ReporteTim(
         tim: int.tryParse(extractValue(sheet.rows[3][0]?.value?.toString())) ??
             0,
@@ -324,153 +308,78 @@ class FilesController {
         fechaEnvio: extractValue(sheet.rows[8][0]?.value?.toString()),
         motivo: 'T',
       );
-
-      await dbHelper.insertReporteTim(reporteTim);
-
-      // 🔁 Consolidar los reportes por SKU antes de insertarlos
-      final Set<String> skusUnicos = {};
-      for (var i = 11; i < sheet.rows.length; i++) {
-        final sku = sheet.rows[i][5]?.value?.toString() ?? '';
-        if (sku.isNotEmpty) skusUnicos.add(sku);
-      }
-      final service = ProductoService();
-      final productosMap = await service.fetchProductosPorSkus(skusUnicos);
-
-      final Map<String, Reporte> consolidadoPorSku = {};
+      // Crear ReporteTim en backend
+      await serviceR.crearReporte(reporteTim);
+      final List<Reporte> loteReporte = [];
+      const int loteSize = 100;
 
       for (var i = 11; i < sheet.rows.length; i++) {
         final row = sheet.rows[i];
-        final sku = row[5]?.value?.toString() ?? '';
+        final sku = row[5]?.value?.toString().trim() ?? '';
         if (sku.isEmpty) continue;
 
-        final producto = productosMap[sku];
-
         final reporte = Reporte(
+          id: '',
           tim: reporteTim.tim,
           olpn: row[0]?.value?.toString() ?? '',
-          ean: producto?['ean'] ?? '',
+          ean: '',
           subdpto: row[4]?.value?.toString() ?? '',
           sku: sku,
           descripcion: row[6]?.value?.toString() ?? '',
           casePack: _parseInt(row[7]?.value),
-          uMedida: producto?['uMedida'] ?? '',
-          costoPromedio: (producto?['costoPromedio'] ?? 0).toDouble(),
-          precioVigente: (producto?['precioVigente'] ?? 0).toDouble(),
+          uMedida: '',
+          costoPromedio: 0.0,
+          precioVigente: 0.0,
           uEnviadas: _parseDouble(
             row[10]?.value != null &&
                     row[10]!.value.toString().trim().isNotEmpty
                 ? row[10]!.value
                 : row[8]?.value,
           ),
-          cEnviadas: _parseDouble(row[9]?.value),
           uRecibidas: 0.0,
           fechavencimiento: '',
-          faltantes: '',
+          observacion: 'PERTENECE',
           fastRegister: false,
         );
 
-        if (consolidadoPorSku.containsKey(sku)) {
-          final existente = consolidadoPorSku[sku]!;
-          existente.uEnviadas += reporte.uEnviadas;
-          existente.cEnviadas += reporte.cEnviadas;
-        } else {
-          consolidadoPorSku[sku] = reporte;
+        loteReporte.add(reporte);
+
+        if (loteReporte.length == loteSize) {
+          await serviceD.crearDetalleReporteEnLote(loteReporte);
+          loteReporte.clear();
         }
       }
 
-      for (final reporte in consolidadoPorSku.values) {
-        await dbHelper.insertReport(reporte);
+      if (loteReporte.isNotEmpty) {
+        await serviceD.crearDetalleReporteEnLote(loteReporte);
       }
+
+      print('✅ Procesamiento completado');
     } catch (e) {
-      print('❌ Error al procesar el archivo: $e');
+      print('❌ Error al procesar archivo: $e');
     }
   }
 
-  // Future<void> processExcelReport(String filePath) async {
-  //   try {
-  //     final file = await _validateFile(filePath);
-  //     if (file == null) return;
+// 🔧 Funciones auxiliares
+  int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    value = int.tryParse(value.toString());
+    return value;
+  }
 
-  //     final bytes = file.readAsBytesSync();
-  //     final excel = Excel.decodeBytes(bytes);
-  //     final dbHelper = DatabaseHelper.instance;
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    value = double.tryParse(value.toString()) ?? 0;
+    return value;
+  }
 
-  //     if (!excel.tables.containsKey('Página1_1')) {
-  //       print(
-  //           '❌ Error: No se encontró la hoja "Página1_1" en el archivo Excel');
-  //       return;
-  //     }
-
-  //     final sheet = excel.tables['Página1_1']!;
-  //     if (sheet.rows.length < 10) {
-  //       print(
-  //           '⚠️ Advertencia: La hoja no tiene suficientes filas para procesar');
-  //       return;
-  //     }
-
-  //     // 🔹 Crear el objeto ReporteTim y guardarlo en la BD
-  //     final reporteTim = ReporteTim(
-  //       tim: int.tryParse(extractValue(sheet.rows[3][0]?.value?.toString())) ??
-  //           0,
-  //       placa: extractValue(sheet.rows[5][0]?.value?.toString()),
-  //       localOrigen: extractValue(sheet.rows[6][0]?.value?.toString()),
-  //       localDestino: extractValue(sheet.rows[7][0]?.value?.toString()),
-  //       fechaEnvio: extractValue(sheet.rows[8][0]?.value?.toString()),
-  //       motivo: 'T',
-  //     );
-
-  //     await dbHelper.insertReporteTim(reporteTim);
-
-  //     // 🔁 Consolidar los reportes por SKU antes de insertarlos
-  //     final Map<String, Reporte> consolidadoPorSku = {};
-
-  //     for (var i = 11; i < sheet.rows.length; i++) {
-  //       final row = sheet.rows[i];
-
-  //       final sku = row[5]?.value?.toString() ?? '';
-  //       if (sku.isEmpty) continue;
-
-  //       final uEnviadas = _parseDouble(
-  //         row[10]?.value != null && row[10]!.value.toString().trim().isNotEmpty
-  //             ? row[10]!.value
-  //             : row[8]?.value,
-  //       );
-
-  //       final reporte = Reporte(
-  //         tim: reporteTim.tim,
-  //         olpn: row[0]?.value?.toString() ?? '',
-  //         ean: '',
-  //         subdpto: row[4]?.value?.toString() ?? '',
-  //         sku: sku,
-  //         descripcion: row[6]?.value?.toString() ?? '',
-  //         casePack: _parseInt(row[7]?.value),
-  //         uMedida: '',
-  //         costoPromedio: 0,
-  //         precioVigente: 0,
-  //         uEnviadas: uEnviadas,
-  //         cEnviadas: _parseDouble(row[9]?.value),
-  //         uRecibidas: 0.0,
-  //         fechavencimiento: '',
-  //         faltantes: '',
-  //         fastRegister: false,
-  //       );
-
-  //       if (consolidadoPorSku.containsKey(sku)) {
-  //         final existente = consolidadoPorSku[sku]!;
-  //         existente.uEnviadas += reporte.uEnviadas;
-  //         existente.cEnviadas += reporte.cEnviadas;
-  //       } else {
-  //         consolidadoPorSku[sku] = reporte;
-  //       }
-  //     }
-
-  //     for (final reporte in consolidadoPorSku.values) {
-  //       await dbHelper.insertReport(reporte);
-  //     }
-  //   } catch (e) {
-  //     print('❌ Error al procesar el archivo: $e');
-  //   }
-  // }
+  String extractValue(String? input) {
+    if (input == null || !input.contains(':')) return input ?? '';
+    return input.split(':').skip(1).join(':').trim();
+  }
 
   Future<bool> processExcelPallet(
       String filePath, List<int> ReportesInfo) async {
@@ -518,6 +427,7 @@ class FilesController {
         if (ean.isEmpty) continue;
 
         final reporte = Reporte(
+          id: '',
           tim: reporteTim.tim,
           olpn: row[1]?.value?.toString() ?? '',
           ean: ean,
@@ -529,10 +439,9 @@ class FilesController {
           costoPromedio: _parseDouble(row[6]?.value),
           precioVigente: 0,
           uEnviadas: 0,
-          cEnviadas: _parseDouble(row[5]?.value) / _parseInt(row[9]?.value),
           uRecibidas: _parseDouble(row[5]?.value),
           fechavencimiento: row[10]?.value?.toString() ?? '',
-          faltantes: '',
+          observacion: '',
           fastRegister: false,
         );
         await dbHelper.insertReport(reporte);

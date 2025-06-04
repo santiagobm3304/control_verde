@@ -473,11 +473,10 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
                   costoPromedio: widget.report.costoPromedio,
                   precioVigente: widget.report.precioVigente,
                   uEnviadas: widget.report.uEnviadas,
-                  cEnviadas: widget.report.cEnviadas,
                   uRecibidas: double.tryParse(_controller.text) ??
                       widget.report.uRecibidas,
                   fechavencimiento: dateController.text,
-                  faltantes: widget.report.faltantes,
+                  observacion: widget.report.observacion,
                 );
                 int result = await DatabaseHelper.instance
                     .updateReporte(reporteActualizado);
