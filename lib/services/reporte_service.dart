@@ -59,4 +59,15 @@ class ReporteService {
     }
   }
 
+  Future<bool> eliminarTim(int tim) async {
+    final url = Uri.parse('$baseUrl/deleterdr/$tim');
+    final response = await http.delete(url);
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      print('Error: ${response.statusCode}');
+      return false;
+    }
+  }
+
 }

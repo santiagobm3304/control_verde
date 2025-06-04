@@ -69,14 +69,14 @@ class _ProductListScreenState extends State<ProductListScreen> {
   void initState() {
     super.initState();
     SocketService().init();
-    final socket = SocketService().socket;
+    // final socket = SocketService().socket;
 
-    socket.on('producto-actualizado', (data) async {
-      print('🟡 Producto actualizado desde otro dispositivo: $data');
-      await _reCargaProductos();
-      _actualizarFiltro();
-      // Aquí actualizas tu lista o estado
-    });
+    // socket.on('producto-actualizado', (data) async {
+    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
+    //   await _reCargaProductos();
+    //   _actualizarFiltro();
+    //   // Aquí actualizas tu lista o estado
+    // });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cargarProductos(); // ya se puede usar context
     });
@@ -236,7 +236,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   void _deleteDonacion(BuildContext context, int tim) async {
     try {
-      await DatabaseHelper.instance.deleteReportes(tim);
+      final serviceR = ReporteService();
+      await serviceR.eliminarTim(tim);
       AwesomeDialog(
         context: context,
         dialogType: DialogType.success,

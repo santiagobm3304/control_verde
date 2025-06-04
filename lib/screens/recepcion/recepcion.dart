@@ -1,5 +1,4 @@
 import 'package:control_verde/controller/files/files_controller.dart';
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/screens/discrepancias/discrepancias_screen.dart';
 import 'package:control_verde/screens/donaciones/donaciones_screen.dart';
 import 'package:control_verde/screens/recepcion/recepcion_screen.dart';
@@ -57,7 +56,8 @@ class RecepcionScreen extends StatelessWidget {
                       Navigator.pop(context);
                       switch (action) {
                         case 'eliminar':
-                          DatabaseHelper.instance.deleteReportes(selectedTim!);
+                        final serviceR = ReporteService();
+                          serviceR.eliminarTim(selectedTim!);
                           break;
 
                         case 'trabajar':

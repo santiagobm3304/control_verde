@@ -81,14 +81,14 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   void initState() {
     super.initState();
     SocketService().init();
-    final socket = SocketService().socket;
+    // final socket = SocketService().socket;
 
-    socket.on('producto-actualizado', (data) async {
-      print('🟡 Producto actualizado desde otro dispositivo: $data');
-      await _reCargaProductos();
-      _actualizarFiltro();
-      // Aquí actualizas tu lista o estado
-    });
+    // socket.on('producto-actualizado', (data) async {
+    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
+    //   await _reCargaProductos();
+    //   _actualizarFiltro();
+    //   // Aquí actualizas tu lista o estado
+    // });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cargarProductos(); // ya se puede usar context
     });
@@ -501,15 +501,15 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
           },
         ),
         actions: [
-          IconButton(
-              onPressed: () {
-                // setState(() {
-                //   activarTodo = !activarTodo;
-                // });
+          // IconButton(
+          //     onPressed: () {
+          //       // setState(() {
+          //       //   activarTodo = !activarTodo;
+          //       // });
 
-                _cambiarEstadoMasa();
-              },
-              icon: Icon(Icons.check)),
+          //       _cambiarEstadoMasa();
+          //     },
+          //     icon: Icon(Icons.check)),
           IconButton(
             icon: _filtrosVisbles
                 ? Icon(Icons.filter_list_off)
@@ -571,7 +571,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                       )
                                     : Icon(
                                         Icons.close,
-                                        color: Colors.red,
+                                        color: const Color.fromARGB(255, 66, 50, 48),
                                       ),
                                 onPressed: () async {
                                   if (_descripcionFiltro != null ||

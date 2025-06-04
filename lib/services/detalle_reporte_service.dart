@@ -133,4 +133,5 @@ class DetalleReporteService {
     print('🎉 Todos los lotes fueron procesados');
     return true;
   }
+  
 }

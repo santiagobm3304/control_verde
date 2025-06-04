@@ -64,13 +64,13 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
   void initState() {
     super.initState();
     SocketService().init();
-    final socket = SocketService().socket;
+    // final socket = SocketService().socket;
 
-    socket.on('producto-actualizado', (data) async {
-      print('🟡 Producto actualizado desde otro dispositivo: $data');
-      _recargarProductos();
-      // Aquí actualizas tu lista o estado
-    });
+    // socket.on('producto-actualizado', (data) async {
+    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
+    //   _recargarProductos();
+    //   // Aquí actualizas tu lista o estado
+    // });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cargarProductos(); // ya se puede usar context
     });
