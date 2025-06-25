@@ -32,6 +32,7 @@ class ProductosReporteScreen extends StatefulWidget {
 class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   List<Reporte> _productos = [];
   List<Reporte> _productosFiltrados = [];
+  bool _verFaltantes = false;
   String? _descripcionFiltro;
   String? _eanFiltro;
   String? _subDeptFiltro;
@@ -72,6 +73,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
 
   List<String> _subDeptOptions = [];
 
+  final serviceDR = DetalleReporteService();
   final TextEditingController _controllerAddTim = TextEditingController();
   final alert = Alerts.instance;
 
@@ -80,25 +82,61 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   @override
   void initState() {
     super.initState();
-    SocketService().init();
-    // final socket = SocketService().socket;
+    SocketService()
+        .joinSala(widget.selectedTim.toString()); // Unir a la sala de recepción
+    final socket = SocketService().socket;
+    SocketService().onReconectado = _recargarVista;
+    print(socket.id);
 
-    // socket.on('producto-actualizado', (data) async {
-    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
-    //   await _reCargaProductos();
-    //   _actualizarFiltro();
-    //   // Aquí actualizas tu lista o estado
-    // });
+    socket.on('producto-agregado', (data) {
+      if (!mounted) return;
+      print(data);
+      final nuevoProducto = Reporte.fromJson(data);
+      print(nuevoProducto);
+      setState(() {
+        _productos.add(nuevoProducto); // Agrega el producto a la lista
+      });
+    });
+
+    socket.on('producto-actualizado', (data) {
+      if (!mounted) return;
+      final id = data['_id'];
+      final nuevasURecibidas = double.tryParse(data['uRecibidas'].toString());
+
+      if (nuevasURecibidas == null)
+        return; // Manejo por si no es un número válido
+
+      final index = _productos.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        setState(() {
+          _productos[index].uRecibidas = nuevasURecibidas;
+          _productos[index].fastRegister = nuevasURecibidas > 0;
+          print(_productos[index].uRecibidas);
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cargarProductos(); // ya se puede usar context
+      _cargarProductos();
     });
   }
 
+  @override
+  void dispose() {
+    SocketService().leaveSala();
+    super.dispose();
+  }
+
+  void _recargarVista() async {
+    print('♻️ Vista recargada por reconexión');
+    await _cargarProductos(); // o lo que uses
+  }
+
   Future<void> _cargarProductos() async {
-    final dialogContext = await loading.instance.showLoadingDialog(context, 'Cargando Productos');
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Cargando Productos');
 
     try {
-      final serviceDR = DetalleReporteService();
       final serviceR = ReporteService();
       final productos =
           await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
@@ -119,23 +157,23 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
     }
   }
 
-  Future<void> _reCargaProductos() async {
-    try {
-      final serviceDR = DetalleReporteService();
-      final productos = await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+  // Future<void> _reCargaProductos() async {
+  //   try {
+  //     final productos =
+  //         await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
 
-      setState(() {
-        _productos = productos;
-        _subDeptOptions = productos
-            .map((item) => item.subdpto) // Extraer los subdepartamentos
-            .toSet() // Eliminar duplicados
-            .toList(); // Conviertir de nuevo a lista
-        _productosFiltrados = productos;
-      });
-    } catch (error) {
-      print('Error al cargar productos: $error');
-    }
-  }
+  //     setState(() {
+  //       _productos = productos;
+  //       _subDeptOptions = productos
+  //           .map((item) => item.subdpto) // Extraer los subdepartamentos
+  //           .toSet() // Eliminar duplicados
+  //           .toList(); // Conviertir de nuevo a lista
+  //       _productosFiltrados = productos;
+  //     });
+  //   } catch (error) {
+  //     print('Error al cargar productos: $error');
+  //   }
+  // }
 
   String extraerCodigoCentral(String input) {
     String limpio =
@@ -146,44 +184,41 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
   }
 
   void _actualizarFiltro() async {
-    setState(() {
-      _productosFiltrados = _productos.where((item) {
-        bool descripcionMatch = _descripcionFiltro == null ||
-            item.descripcion
-                .toLowerCase()
-                .contains(_descripcionFiltro!.toLowerCase());
+    List<Reporte> base = _productos;
 
-        bool subDeptMatch = _subDeptFiltro == null ||
-            item.subdpto.toLowerCase().contains(_subDeptFiltro!.toLowerCase());
+    if (_verFaltantes) {
+      base = base.where((item) => item.uEnviadas > item.uRecibidas).toList();
+    }
 
-        bool eanMatch = true;
+    List<Reporte> filtrados = base.where((item) {
+      final descripcionMatch = _descripcionFiltro == null ||
+          item.descripcion
+              .toLowerCase()
+              .contains(_descripcionFiltro!.toLowerCase());
 
-        if (_eanFiltro != null && _eanFiltro!.isNotEmpty) {
-          if (_eanFiltro!.length <= 8) {
-            // Buscar por SKU si es corto
-            eanMatch = item.sku.contains(_eanFiltro!);
-          } else {
-            // Buscar por EAN si es largo
-            eanMatch = item.ean.contains(_eanFiltro!);
-          }
+      final subDeptMatch = _subDeptFiltro == null ||
+          item.subdpto.toLowerCase().contains(_subDeptFiltro!.toLowerCase());
+
+      bool eanMatch = true;
+      if (_eanFiltro != null && _eanFiltro!.isNotEmpty) {
+        if (_eanFiltro!.length <= 8) {
+          eanMatch = item.sku.contains(_eanFiltro!);
+        } else {
+          eanMatch = item.ean.contains(_eanFiltro!);
         }
+      }
 
-        return descripcionMatch && eanMatch && subDeptMatch;
-      }).toList();
+      return descripcionMatch && subDeptMatch && eanMatch;
+    }).toList();
 
-      _productosFiltrados
-          .sort((a, b) => a.descripcion.compareTo(b.descripcion));
-    });
+    filtrados.sort((a, b) => a.descripcion.compareTo(b.descripcion));
 
-    // Si no encuentra nada, intenta convertir el EAN largo a SKU
-    if (_productosFiltrados.isEmpty &&
-        _eanFiltro != null &&
-        _eanFiltro!.length > 8) {
+    // 3. Si no hay resultados y filtro por EAN largo, intentar búsqueda por SKU central
+    if (filtrados.isEmpty && _eanFiltro != null) {
       final posibleSku = extraerCodigoCentral(_eanFiltro!);
-
       final encontrados =
-          _productos.where((item) => item.sku.contains(posibleSku)).toList();
-
+          base.where((item) => item.sku.contains(posibleSku)).toList();
+      print('encontrados>$encontrados');
       if (encontrados.isNotEmpty) {
         setState(() {
           _productosFiltrados = encontrados;
@@ -191,79 +226,87 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         return;
       }
       final service = ProductoService();
-      final productoGenal = await service.obtenerProductoPorCodigo(_eanFiltro!);
+      final productoGeneral =
+          await service.obtenerProductoPorCodigo(_eanFiltro!);
       setState(() {
-        _productoGenernal = productoGenal;
+        _productoGenernal = productoGeneral;
+        _productosFiltrados = [];
       });
+      return;
     }
+
+    // 4. Guardar resultado final
+    setState(() {
+      _productosFiltrados = filtrados;
+    });
   }
 
-  Future<void> _cambiarEstadoMasa() async {
-    bool confirmar = await _mostrarConfirmacion();
-    final serviceDR = DetalleReporteService();
-    if (confirmar) {
-      for (var producto in _productosFiltrados) {
-        bool result;
-        //if (activarTodo) {
-        // Si activarTodo es true, activamos el switch
-        result = await serviceDR.actualizarRecibidos(
-            producto.id, producto.uEnviadas);
-        //}
+  // Future<void> _cambiarEstadoMasa() async {
+  //   bool confirmar = await _mostrarConfirmacion();
+  //   if (confirmar) {
+  //     for (var producto in _productosFiltrados) {
+  //       bool result;
+  //       //if (activarTodo) {
+  //       // Si activarTodo es true, activamos el switch
+  //       result = await serviceDR.actualizarRecibidos(
+  //           producto.id, producto.uEnviadas);
+  //       //}
 
-        // else {
-        //   // Si activarTodo es false, desactivamos el switch
-        //   result = await DatabaseHelper.instance
-        //       .updateRecibidos(producto.id ?? 0, 0);
-        // }
+  //       // else {
+  //       //   // Si activarTodo es false, desactivamos el switch
+  //       //   result = await DatabaseHelper.instance
+  //       //       .updateRecibidos(producto.id ?? 0, 0);
+  //       // }
 
-        // Si la actualización fue exitosa, actualizamos el estado del producto
-        if (result) {
-          setState(() {
-            producto.fastRegister = true;
-            //  producto.fastRegister = activarTodo;
-            producto.uRecibidas = producto.uEnviadas;
-          });
-        } else {
-          _showAlert('Error al actualizar los datos.');
-          break;
-        }
-      }
-    }
-  }
+  //       // Si la actualización fue exitosa, actualizamos el estado del producto
+  //       if (result) {
+  //         setState(() {
+  //           producto.fastRegister = true;
+  //           //  producto.fastRegister = activarTodo;
+  //           producto.uRecibidas = producto.uEnviadas;
+  //         });
+  //       } else {
+  //         _showAlert('Error al actualizar los datos.');
+  //         break;
+  //       }
+  //     }
+  //   }
+  // }
 
-  Future<bool> _mostrarConfirmacion() async {
-    return (await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('Confirmación'),
-              content: Text(
-                  '¿Estás seguro de que quieres  registras todos los productos?'),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('Cancelar'),
-                  onPressed: () {
-                    Navigator.of(context)
-                        .pop(false); // Regresar false al cerrar el diálogo
-                  },
-                ),
-                TextButton(
-                  child: Text('Confirmar'),
-                  onPressed: () {
-                    Navigator.of(context)
-                        .pop(true); // Regresar true al confirmar
-                  },
-                ),
-              ],
-            );
-          },
-        )) ??
-        false;
-  }
+  // Future<bool> _mostrarConfirmacion() async {
+  //   return (await showDialog<bool>(
+  //         context: context,
+  //         builder: (context) {
+  //           return AlertDialog(
+  //             title: Text('Confirmación'),
+  //             content: Text(
+  //                 '¿Estás seguro de que quieres  registras todos los productos?'),
+  //             actions: <Widget>[
+  //               TextButton(
+  //                 child: Text('Cancelar'),
+  //                 onPressed: () {
+  //                   Navigator.of(context)
+  //                       .pop(false); // Regresar false al cerrar el diálogo
+  //                 },
+  //               ),
+  //               TextButton(
+  //                 child: Text('Confirmar'),
+  //                 onPressed: () {
+  //                   Navigator.of(context)
+  //                       .pop(true); // Regresar true al confirmar
+  //                 },
+  //               ),
+  //             ],
+  //           );
+  //         },
+  //       )) ??
+  //       false;
+  // }
 
   Future<void> _insertarProductoSobrante(String sku) async {
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Agregando Producto');
     try {
-      final serviceDR = DetalleReporteService();
       final reporteDR = DetalleReporte(
         id: '',
         tim: widget.selectedTim,
@@ -274,9 +317,12 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         fechavencimiento: '',
         observacion: 'SOBRANTE',
       );
-      print(reporteDR);
-      await serviceDR.insertarDetalleReporte(reporteDR);
-      await _reCargaProductos();
+      Reporte result = await serviceDR.insertarDetalleReporte(
+          reporteDR, widget.selectedTim.toString());
+      print(result);
+      setState(() {
+        _productos.add(result);
+      });
       _actualizarFiltro();
       AwesomeDialog(
         context: context,
@@ -295,22 +341,34 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
         desc: 'Hubo un problema al agregar el producto como sobrante. $e',
         btnOkOnPress: () {},
       ).show();
+    } finally {
+      Navigator.pop(dialogContext);
     }
   }
 
   void _showReportDetails(BuildContext context, Reporte report) async {
-    await showDialog(
+    final Reporte? result = await showDialog<Reporte>(
       context: context,
       builder: (BuildContext context) {
         return ReportDetailsDialog(
           report: report,
-          onSave: () async {
-            await _reCargaProductos();
-            _actualizarFiltro();
-          },
+          onSave: () {},
         );
       },
     );
+
+    if (result != null) {
+      final index = _productos.indexWhere((p) => p.id == result.id);
+      print(result);
+      print(index);
+      if (index != -1) {
+        setState(() {
+          _productos[index] = result;
+          _actualizarFiltro();
+          print(_productos[index]);
+        });
+      }
+    }
   }
 
   void _showExportDialog(BuildContext context) async {
@@ -366,14 +424,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                       },
                     ).show();
                   } else {
-                    AwesomeDialog(
-                      context: context,
-                      dialogType: DialogType.warning,
-                      animType: AnimType.scale,
-                      title: 'Ingrese su Nombre',
-                      desc: 'Es necesario el nombre del Preventor',
-                      btnOkOnPress: () {},
-                    ).show();
+                    alert.showWarningDialog(context, "Ingrese los campos necesarios");
                   }
                 },
                 child: const Text(
@@ -477,8 +528,6 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
     switch (result) {
       case 1:
         _showExportDialog(context);
-        //_showExportButton = true;
-
         break;
       case 2:
         break;
@@ -501,15 +550,17 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
           },
         ),
         actions: [
-          // IconButton(
-          //     onPressed: () {
-          //       // setState(() {
-          //       //   activarTodo = !activarTodo;
-          //       // });
-
-          //       _cambiarEstadoMasa();
-          //     },
-          //     icon: Icon(Icons.check)),
+          IconButton(
+            icon: _verFaltantes
+                ? Icon(Icons.visibility)
+                : Icon(Icons.visibility_off),
+            onPressed: () => {
+              setState(() {
+                _verFaltantes = !_verFaltantes;
+              }),
+              _actualizarFiltro(),
+            },
+          ),
           IconButton(
             icon: _filtrosVisbles
                 ? Icon(Icons.filter_list_off)
@@ -571,7 +622,8 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                       )
                                     : Icon(
                                         Icons.close,
-                                        color: const Color.fromARGB(255, 66, 50, 48),
+                                        color: const Color.fromARGB(
+                                            255, 66, 50, 48),
                                       ),
                                 onPressed: () async {
                                   if (_descripcionFiltro != null ||
@@ -601,6 +653,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: _codigoController,
+                            keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               border: OutlineInputBorder(
                                 borderSide: BorderSide(color: AppColors.amber),
@@ -636,6 +689,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                   } else {
                                     setState(() {
                                       _codigoController.clear();
+                                      _productoGenernal = null;
                                       _eanFiltro = null;
                                     });
                                     _actualizarFiltro();
@@ -975,6 +1029,7 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                               await _insertarProductoSobrante(
                                                   _productoGenernal!.sku);
                                               _controllerAddTim.clear();
+                                              _productoGenernal = null;
                                             } else {
                                               AwesomeDialog(
                                                 context: context,
@@ -1070,6 +1125,10 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                             value: producto.fastRegister, //
                                             activeColor: AppColors.verdeClaro,
                                             onChanged: (value) async {
+                                              final dialogContext = await loading
+                                                  .instance
+                                                  .showLoadingDialog(context,
+                                                      'Actualizando producto');
                                               try {
                                                 final serviceDR =
                                                     DetalleReporteService();
@@ -1077,7 +1136,9 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                                   bool result = await serviceDR
                                                       .actualizarRecibidos(
                                                           producto.id,
-                                                          producto.uEnviadas);
+                                                          producto.uEnviadas,
+                                                          widget.selectedTim
+                                                              .toString());
                                                   if (result) {
                                                     setState(() {
                                                       producto.fastRegister =
@@ -1090,11 +1151,12 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                                         'Error al actualizar los datos.');
                                                   }
                                                 } else {
-                                                  final serviceDR =
-                                                      DetalleReporteService();
                                                   bool result = await serviceDR
                                                       .actualizarRecibidos(
-                                                          producto.id, 0);
+                                                          producto.id,
+                                                          0,
+                                                          widget.selectedTim
+                                                              .toString());
                                                   if (result) {
                                                     setState(() {
                                                       producto.uRecibidas = 0;
@@ -1109,6 +1171,8 @@ class _ProductosReporteScreen extends State<ProductosReporteScreen> {
                                               } catch (e) {
                                                 _showAlert(
                                                     'Ocurrió un error: $e');
+                                              } finally {
+                                                Navigator.pop(dialogContext);
                                               }
                                             })
                                       ],

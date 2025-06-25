@@ -1,73 +1,34 @@
 import 'package:control_verde/controller/files/files_controller.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/screens/donaciones/donaciones_screen.dart';
 import 'package:control_verde/screens/inventario/inventario.dart';
 import 'package:control_verde/screens/recepcion/recepcion.dart';
-
-import 'package:control_verde/utils/alerts.dart';
+import 'package:control_verde/services/reporte_service.dart';
+import 'package:control_verde/services/socket_service.dart';
 
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:control_verde/widgets/cardInicio.dart';
 import 'package:flutter/material.dart';
 
-import 'package:awesome_dialog/awesome_dialog.dart';
-
-class InicioScreen extends StatelessWidget {
+class InicioScreen extends StatefulWidget {
   const InicioScreen({Key? key}) : super(key: key);
 
-  _deleteProductos(BuildContext context) async {
-    AwesomeDialog(
-      context: context,
-      dialogType: DialogType.warning,
-      title: 'Eliminar Productos',
-      desc: '¿Estás seguro de que deseas eliminar todos los productos?',
-      btnCancelOnPress: () {},
-      btnOkOnPress: () async {
-        await DatabaseHelper.instance.deleteProfundidad();
-        Alerts.instance.showSuccessDialog(
-            context, 'Todos los productos han sido eliminados.');
-      },
-    ).show();
-  }
+  @override
+  _InicioScreenState createState() => _InicioScreenState();
+}
 
-  void _handleAction(BuildContext context, bool hasProductos) {
-    if (hasProductos) {
-      _deleteProductos(context);
-    } else {
-      FilesController.instance.handleFileSelection(context,2);
-    }
-  }
-
-  Widget _buildActionIcon(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: DatabaseHelper.instance.hasProductos(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(12.0),
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(color: AppColors.white),
-            ),
-          );
-        }
-
-        final hasProductos = snapshot.data ?? false;
-
-        return IconButton(
-          icon: Icon(hasProductos ? Icons.delete : Icons.upload_file),
-          onPressed: () => _handleAction(context, hasProductos),
-        );
-      },
-    );
+class _InicioScreenState extends State<InicioScreen> {
+  @override
+  void initState() {
+    super.initState();
+    SocketService().init(); // Aquí se inicializa el socket correctamente
   }
 
   Future<List<int>> mostrarFormularioDonacion(
       BuildContext context, String motivo) async {
-    final dbHelper = DatabaseHelper.instance;
+    final serviceR = ReporteService();
     final _formKey = GlobalKey<FormState>();
 
     TextEditingController fechaController = TextEditingController();
@@ -134,9 +95,8 @@ class InicioScreen extends StatelessWidget {
                         motivo: motivo,
                       );
 
-                      await dbHelper.insertReporteTim(reporteTim);
-
-                      final tims = await dbHelper.getTimsByMotivo(motivo);
+                      await serviceR.crearReporte(reporteTim);
+                      final tims = await serviceR.buscarPorMotivo(motivo);
                       Navigator.pop(context, tims);
                     }
                   },
@@ -147,6 +107,7 @@ class InicioScreen extends StatelessWidget {
           },
         ) ??
         [];
+
     return tims;
   }
 
@@ -154,12 +115,18 @@ class InicioScreen extends StatelessWidget {
     BuildContext context, {
     required String motivo,
   }) async {
-    List<int> tims = await DatabaseHelper.instance.getTimsByMotivo(motivo);
-
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Obteniendo TIMS');
+    final serviceR = ReporteService();
+    List<int> tims = await serviceR.buscarPorMotivo(motivo);
+    Navigator.pop(dialogContext);
     if (tims.isEmpty) {
       final nuevosTims = await mostrarFormularioDonacion(context, motivo);
-
+      final dialogContext =
+          await loading.instance.showLoadingDialog(context, 'Creando Donación');
       if (nuevosTims.isNotEmpty) {
+        Navigator.pop(dialogContext);
+
         final int firstTim = nuevosTims.first;
         Navigator.push(
           context,
@@ -168,15 +135,14 @@ class InicioScreen extends StatelessWidget {
           ),
         );
       } else {
+        Navigator.pop(dialogContext);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('❌ No se creó la donación')),
         );
       }
     } else {
-      // Existe al menos uno, redirigir a la ventana del primero
       final int firstTim = tims.first;
-
-      // Asumiendo que la ruta se llama '/detalleReporte' y pasas el TIM como argumento
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -186,6 +152,40 @@ class InicioScreen extends StatelessWidget {
     }
   }
 
+  // Future<void> _existsTimByMotivo(
+  //   BuildContext context, {
+  //   required String motivo,
+  // }) async {
+  //   final serviceR = ReporteService();
+  //   List<int> tims = await serviceR.buscarPorMotivo(motivo);
+
+  //   if (tims.isEmpty) {
+  //     final nuevosTims = await mostrarFormularioDonacion(context, motivo);
+
+  //     if (nuevosTims.isNotEmpty) {
+  //       final int firstTim = nuevosTims.first;
+  //       Navigator.push(
+  //         context,
+  //         MaterialPageRoute(
+  //           builder: (context) => ProductListScreen(selectedTim: firstTim),
+  //         ),
+  //       );
+  //     } else {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('❌ No se creó la donación')),
+  //       );
+  //     }
+  //   } else {
+  //     final int firstTim = tims.first;
+  //     Navigator.push(
+  //       context,
+  //       MaterialPageRoute(
+  //         builder: (context) => ProductListScreen(selectedTim: firstTim),
+  //       ),
+  //     );
+  //   }
+  // }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -193,9 +193,6 @@ class InicioScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Módulos', style: TextStyle(color: AppColors.white)),
         backgroundColor: AppColors.verdeClaro,
-        actions: [
-          _buildActionIcon(context),
-        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -205,8 +202,7 @@ class InicioScreen extends StatelessWidget {
           mainAxisSpacing: 16,
           children: <Widget>[
             CustomGridCard(
-              icon: Icon(Icons.list_alt,
-                  size: 40, color: AppColors.verdeClaro),
+              icon: Icon(Icons.list_alt, size: 40, color: AppColors.verdeClaro),
               title: 'Recepción',
               onTap: (context) => Navigator.push(
                 context,
@@ -216,21 +212,22 @@ class InicioScreen extends StatelessWidget {
               ),
             ),
             CustomGridCard(
-              icon: Icon(Icons.stacked_line_chart,
-                  size: 40, color: AppColors.verdeClaro),
-              title: 'Inventario',
-              onTap: (context) => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => InventarioScreen(),
-                ),
-              ),
+              icon:
+                  Icon(Icons.handshake, size: 40, color: AppColors.verdeClaro),
+              title: 'Donaciones',
+              onTap: (context) => _existsTimByMotivo(context, motivo: 'D'),
             ),
-            CustomGridCard(
-                icon: Icon(Icons.handshake,
-                    size: 40, color: AppColors.verdeClaro),
-                title: 'Donaciones',
-                onTap: (context) => _existsTimByMotivo(context, motivo: 'D')),
+            // CustomGridCard(
+            //   icon: Icon(Icons.stacked_line_chart,
+            //       size: 40, color: AppColors.verdeClaro),
+            //   title: 'Inventario',
+            //   onTap: (context) => Navigator.push(
+            //     context,
+            //     MaterialPageRoute(
+            //       builder: (context) => InventarioScreen(),
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),

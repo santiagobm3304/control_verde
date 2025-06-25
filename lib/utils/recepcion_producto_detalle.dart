@@ -1,9 +1,8 @@
-import 'package:control_verde/database/database_helper.dart';
-import 'package:control_verde/model/detalle_reporte_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
 import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:flutter/material.dart';
 
 class ReportDetailsDialog extends StatefulWidget {
@@ -246,7 +245,8 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
               SizedBox(width: 8),
               Expanded(
                 child: TextFormField(
-                  initialValue: '${widget.report.uEnviadas/widget.report.casePack}',
+                  initialValue:
+                      '${widget.report.uEnviadas / widget.report.casePack}',
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
                     labelText: 'Cajas',
@@ -462,8 +462,26 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                     ),
                   );
                   if (response != null && response['guardado'] == true) {
+                    Reporte reporteActualizado = Reporte(
+                      tim: widget.report.tim,
+                      id: widget.report.id,
+                      olpn: widget.report.olpn,
+                      subdpto: widget.report.subdpto,
+                      ean: response['ean'],
+                      descripcion: widget.report.descripcion,
+                      casePack: widget.report.casePack,
+                      uMedida: response['uMedida'],
+                      precioVigente: widget.report.precioVigente,
+                      costoPromedio: widget.report.costoPromedio,
+                      sku: widget.report.sku,
+                      uEnviadas: widget.report.uEnviadas,
+                      uRecibidas: double.tryParse(_controller.text) ??
+                          widget.report.uRecibidas,
+                      fechavencimiento: dateController.text,
+                      observacion: widget.report.observacion,
+                    );
                     widget.onSave();
-                    Navigator.of(context).pop();
+                    Navigator.pop(context, reporteActualizado);
                   }
                 },
                 style: TextButton.styleFrom(
@@ -478,10 +496,17 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
             TextButton(
               onPressed: () async {
                 final serviceDR = DetalleReporteService();
-                DetalleReporte reporteActualizado = DetalleReporte(
+                Reporte reporteActualizado = Reporte(
                   tim: widget.report.tim,
                   id: widget.report.id,
                   olpn: widget.report.olpn,
+                  subdpto: widget.report.subdpto,
+                  ean: widget.report.ean,
+                  descripcion: widget.report.descripcion,
+                  casePack: widget.report.casePack,
+                  uMedida: widget.report.uMedida,
+                  precioVigente: widget.report.precioVigente,
+                  costoPromedio: widget.report.costoPromedio,
                   sku: widget.report.sku,
                   uEnviadas: widget.report.uEnviadas,
                   uRecibidas: double.tryParse(_controller.text) ??
@@ -489,11 +514,14 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                   fechavencimiento: dateController.text,
                   observacion: widget.report.observacion,
                 );
-                int result = await serviceDR.actualizarDatosDetalle(reporteActualizado);
-                print(result);
+                final dialogContext = await loading.instance
+                    .showLoadingDialog(context, 'Actualizando Producto');
+                int result =
+                    await serviceDR.actualizarDatosDetalle(reporteActualizado, widget.report.tim.toString());
                 if (result > 0) {
                   widget.onSave();
-                  Navigator.of(context).pop();
+                  Navigator.of(dialogContext).pop();
+                  Navigator.pop(context, reporteActualizado);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error al actualizar el reporte')),
@@ -502,7 +530,6 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
               },
               style: TextButton.styleFrom(
                 backgroundColor: Colors.green,
-                // primary: Colors.white,
               ),
               child: const Text(
                 'Guardar',

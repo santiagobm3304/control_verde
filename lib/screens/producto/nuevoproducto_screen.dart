@@ -1,7 +1,7 @@
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/services/productos_service.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:flutter/material.dart';
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
 
@@ -73,16 +73,17 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
         casePack: int.tryParse(_casePackController.text) ?? 0,
         uMedida: _uMedidaController.text,
       );
-      
+      final dialogContext = await loading.instance.showLoadingDialog(context, 'Actualizando producto');
       try {
         final service = ProductoService();
         await service.actualizarProducto(nuevoProducto);
-        
+        Navigator.pop(dialogContext); // Cierra el diálogo de carga
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Producto se actualizó con éxito')),
         );
-        Navigator.pop(context, {'guardado': true});
+        Navigator.pop(context, {'guardado': true, 'ean': nuevoProducto.ean, 'uMedida': nuevoProducto.uMedida}); 
       } catch (e) {
+        Navigator.pop(dialogContext); // Cierra el diálogo de carga
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al guardar el producto')),
         );
@@ -100,39 +101,6 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Autocomplete<String>(
-              //   optionsBuilder: (TextEditingValue textEditingValue) {
-              //     if (textEditingValue.text.isEmpty) {
-              //       return subDeptMap.keys;
-              //     }
-              //     return subDeptMap.keys.where((option) {
-              //       return option.toLowerCase().contains(
-              //             textEditingValue.text.toLowerCase(),
-              //           );
-              //     });
-              //   },
-              //   displayStringForOption: (option) => option,
-              //   onSelected: (selectedOption) {
-              //     setState(() {
-              //       _subdptoController.text = selectedOption;
-              //     });
-              //   },
-              //   fieldViewBuilder:
-              //       (context, controller, focusNode, onFieldSubmitted) {
-              //     _subdptoController = controller;
-              //     return TextField(
-              //       controller: controller,
-              //       focusNode: focusNode,
-              //       decoration: InputDecoration(
-              //         labelText: 'Subdepartamento',
-              //         suffixIcon: Icon(Icons.arrow_drop_down),
-              //         border: OutlineInputBorder(),
-              //         contentPadding:
-              //             EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-              //       ),
-              //     );
-              //   },
-              // ),
               _buildTextField(_subdptoController, 'Sub Departamento'),
               _buildTextField(_proveedorController, 'Proveedor'),
               TextFormField(

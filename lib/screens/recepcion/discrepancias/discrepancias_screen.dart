@@ -38,7 +38,6 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
   List<Reporte> _productosSobrantes = [];
   // String? _descripcionFiltro;
   // String? _eanFiltro;
-  // String? _subDeptFiltro;
   // bool _filtrosVisbles = true;
   bool _isFaltantesSelected =
       true; // Para saber si 'Faltantes' está seleccionado
@@ -51,6 +50,7 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
       TextEditingController();
   final TextEditingController _textControllerContador = TextEditingController();
 
+  bool _filtrosVisbles = true;
   // TextEditingController _dateDesdeController = TextEditingController();
   // TextEditingController _dateHastaController = TextEditingController();
   // TextEditingController _codigoController = TextEditingController();
@@ -58,22 +58,55 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
   // DateTime? _selectedDesdeDate;
   // DateTime? _selectedHastaDate;
 
-  ///List<String> _subDeptOptions = [];
+  List<String> _subDeptOptions = [];
+
+  ///
+  Map<String, String> subDeptMap = {
+    'Carnes': 'J03',
+    'Frutas': 'J040101',
+    'Verduras': 'J040102',
+    'Fiambres y Huevos': 'J0501',
+    'Leches': 'J050201',
+    'Mantequillas': 'J050202',
+    'Quesos': 'J050204',
+    'Yogurts': 'J050205',
+    'Helados': 'J050306',
+    'Embutidos Congelados': 'J050301',
+    'Panadería': 'J06',
+    'Platos Preparados': 'J07',
+    'Pizzas': 'J070109',
+    'Lavado y Cuidado': 'J0201',
+    'Cuidado e Higiene': 'J0202',
+    'Mascotas': 'J0203',
+    'Alimentos Bebés': 'J0204',
+    'Vestuario': 'J08',
+    'Hogar': 'J09',
+    'Bazar': 'J10',
+    'Muebles': 'J090204',
+    'Electro': 'J11'
+  };
 
   @override
   void initState() {
     super.initState();
-    SocketService().init();
-    // final socket = SocketService().socket;
+    SocketService()
+        .joinSala(widget.selectedTim.toString()); // Unir a la sala de recepción
 
-    // socket.on('producto-actualizado', (data) async {
-    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
-    //   _recargarProductos();
-    //   // Aquí actualizas tu lista o estado
-    // });
+    final socket = SocketService().socket;
+
+    socket.on('producto-actualizado', (data) async {
+      print('🟡 Producto actualizado desde otro dispositivo: $data');
+      _recargarProductos();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _cargarProductos(); // ya se puede usar context
     });
+  }
+
+  @override
+  void dispose() {
+    SocketService().leaveSala();
+    super.dispose();
   }
 
   Future<void> _cargarProductos({int? tipoFiltro}) async {
@@ -85,8 +118,7 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
       final serviceR = ReporteService();
       final productos =
           await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
-      final reporteInfo =
-          await serviceR.obtenerReporte(widget.selectedTim);
+      final reporteInfo = await serviceR.obtenerReporte(widget.selectedTim);
 
       setState(() {
         _productosFaltantes = productos.where((item) {
@@ -100,6 +132,10 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
         _productosFiltrados = (tipoFiltro == null || tipoFiltro == 0)
             ? _productosFaltantes
             : _productosSobrantes;
+        _subDeptOptions = _productosFiltrados
+            .map((item) => item.subdpto) // Extraer los subdepartamentos
+            .toSet() // Eliminar duplicados
+            .toList(); // Conviertir de nuevo a lista
         reportesInfo = reporteInfo;
       });
     } catch (error) {
@@ -109,10 +145,11 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
     }
   }
 
-Future<void> _recargarProductos({int? tipoFiltro}) async {
+  Future<void> _recargarProductos({int? tipoFiltro}) async {
     try {
       final serviceDR = DetalleReporteService();
-      final productos = await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+      final productos =
+          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
       setState(() {
         _productosFaltantes = productos.where((item) {
           return item.uEnviadas > item.uRecibidas;
@@ -125,10 +162,14 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
         _productosFiltrados = (tipoFiltro == null || tipoFiltro == 0)
             ? _productosFaltantes
             : _productosSobrantes;
+        _subDeptOptions = _productosFiltrados
+            .map((item) => item.subdpto) // Extraer los subdepartamentos
+            .toSet() // Eliminar duplicados
+            .toList(); // Conviertir de nuevo a lista
       });
     } catch (error) {
       print('Error al cargar productos: $error');
-    } 
+    }
   }
 
   void _showReportDetails(BuildContext context, Reporte report) {
@@ -282,14 +323,16 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
 
   Future<String> exportToExcel() async {
     var excel = xcl.Excel.createExcel();
-    excel.delete('Sheet1');
+    excel.sheets.remove('Sheet1');
     var sheet = excel['RMF'];
     var sheet1 = excel['SOBRANTES'];
-    CellStyle style = CellStyle(
+    CellStyle styleCabecera = CellStyle(
+      fontFamily: 'Calibri',
+      fontSize: 8,
       bold: true,
       horizontalAlign: HorizontalAlign.Center,
       verticalAlign: VerticalAlign.Center,
-      backgroundColorHex: ExcelColor.fromHexString("3352FF"),
+      backgroundColorHex: ExcelColor.fromHexString("#3352FF"),
       bottomBorder: xcl.Border(borderStyle: xcl.BorderStyle.Thin),
       topBorder: xcl.Border(borderStyle: xcl.BorderStyle.Thin),
       leftBorder: xcl.Border(borderStyle: xcl.BorderStyle.Thin),
@@ -318,17 +361,32 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
         .parse(reportesInfo!.fechaEnvio!);
 
     String fechaEnvio = DateFormat("dd/MM/yy").format(fecha);
+    String asunto = '';
 
-    String asunto = "RMF_" +
-        dateBitacora +
-        "_" +
-        codigoOrigen +
-        "_TIM_" +
-        tim +
-        " " +
-        codigoDestino +
-        "_" +
-        tiendaDestino; //ASUNTO
+    if (movilOrigen == "CD Secos") {
+      asunto = "RMF_" +
+          dateBitacora +
+          "_" +
+          codigoOrigen +
+          "_TIM_" +
+          tim +
+          " " +
+          codigoDestino +
+          "_" +
+          tiendaDestino; 
+    } else {
+      asunto = "DISCREPANCIA_" +
+          dateBitacora +
+          "_" +
+          codigoOrigen +
+          "_TIM_" +
+          tim +
+          " " +
+          codigoDestino +
+          "_" +
+          tiendaDestino;
+    }
+
     var rowIndex = sheet.maxRows;
     List<String> headers = [
       'FECHA ENVÍO',
@@ -358,7 +416,7 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
       var cell = sheet.cell(xcl.CellIndex.indexByColumnRow(
           columnIndex: colIndex, rowIndex: rowIndex));
       cell.value = xcl.TextCellValue(headerText);
-      cell.cellStyle = style;
+      cell.cellStyle = styleCabecera;
     });
 
     for (var report in _productosFiltrados) {
@@ -373,8 +431,8 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
         TextCellValue(conductor),
         TextCellValue(asunto),
         TextCellValue(tim),
-        TextCellValue(report.subdpto),
         TextCellValue(report.olpn),
+        TextCellValue(report.subdpto),
         TextCellValue(report.sku),
         TextCellValue(report.ean),
         TextCellValue(report.descripcion),
@@ -383,7 +441,8 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
         DoubleCellValue(report.uRecibidas),
         DoubleCellValue(report.uRecibidas - report.uEnviadas),
         DoubleCellValue(report.costoPromedio),
-        await DoubleCellValue(report.costoPromedio * (report.uRecibidas - report.uEnviadas)),
+        await DoubleCellValue(
+            report.costoPromedio * (report.uRecibidas - report.uEnviadas)),
         TextCellValue(contador),
       ]);
     }
@@ -392,19 +451,28 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
       TextCellValue('SKU'),
       TextCellValue('Descripción'),
       TextCellValue('Sub Departamento'),
+      TextCellValue('Cajas Enviadas'),
+      TextCellValue('Uni Enviadas'),
       TextCellValue('Cajas Recibidas'),
       TextCellValue('Uni Recibidas'),
-      TextCellValue('Fecha Vencimiento'),
+      TextCellValue('Uni Sobrantes'),
+      TextCellValue('Costo Promedio'),
+      TextCellValue('Costo Total'),
     ]);
 
     for (var report in _productosSobrantes) {
+      var cantidadSobrante = report.uRecibidas - report.uEnviadas;
       sheet1.appendRow([
         TextCellValue(report.sku),
         TextCellValue(report.descripcion),
         TextCellValue(report.subdpto),
+        DoubleCellValue(report.uEnviadas / report.casePack),
+        DoubleCellValue(report.uEnviadas),
         DoubleCellValue(report.uRecibidas / report.casePack),
         DoubleCellValue(report.uRecibidas),
-        TextCellValue(report.fechavencimiento),
+        DoubleCellValue(cantidadSobrante),
+        DoubleCellValue(report.costoPromedio),
+        DoubleCellValue(report.costoPromedio * cantidadSobrante)
       ]);
     }
 
@@ -440,22 +508,16 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
           },
         ),
         actions: [
-          // IconButton(
-          //   icon: _filtrosVisbles
-          //       ? Icon(Icons.filter_list_off)
-          //       : Icon(Icons.filter_list),
-          //   onPressed: () => {
-          //     setState(() {
-          //       _filtrosVisbles = !_filtrosVisbles;
-          //     })
-          //   },
-          //   //tooltip: '',
-          // ),
-          // IconButton(
-          //   icon: const Icon(Icons.more_vert),
-          //   onPressed: () => _showOptionsMenu(context),
-          //   // tooltip: 'Exportar',
-          // ),
+          IconButton(
+            icon: _filtrosVisbles
+                ? Icon(Icons.filter_list_off)
+                : Icon(Icons.filter_list),
+            onPressed: () => {
+              setState(() {
+                _filtrosVisbles = !_filtrosVisbles;
+              })
+            },
+          ),
         ],
       ),
       body: Padding(
@@ -498,6 +560,54 @@ Future<void> _recargarProductos({int? tipoFiltro}) async {
                     ),
                   ],
                 ),
+                // Visibility(
+                //   visible: _filtrosVisbles,
+                //   child: Column(
+                //     children: [
+                //       Row(
+                //         children: [
+                //           Expanded(
+                //             child: DropdownButtonFormField<String>(
+                //               value: _subDeptFiltro,
+                //               decoration: InputDecoration(
+                //                 labelText: 'SubDept',
+                //                 border: OutlineInputBorder(),
+                //                 contentPadding: EdgeInsets.symmetric(
+                //                     vertical: 8.0, horizontal: 8.0),
+                //                 suffixIcon: _subDeptFiltro != null
+                //                     ? IconButton(
+                //                         icon: Icon(Icons.close,
+                //                             color: Colors.red),
+                //                         onPressed: () {
+                //                           setState(() {
+                //                             _subDeptFiltro = null;
+                //                           });
+                //                           _actualizarFiltro();
+                //                         },
+                //                       )
+                //                     : Icon(Icons.arrow_drop_down,
+                //                         color: Colors.amber),
+                //               ),
+                //               items: _subDeptOptions.map((String option) {
+                //                 return DropdownMenuItem<String>(
+                //                   value: option,
+                //                   child: Text(option),
+                //                 );
+                //               }).toList(),
+                //               onChanged: (String? newValue) {
+                //                 setState(() {
+                //                   _subDeptFiltro = newValue;
+                //                 });
+                //                 _actualizarFiltro();
+                //               },
+                //             ),
+                //           ),
+                //         ],
+                //       ),
+                //       SizedBox(height: 12),
+                //     ],
+                //   ),
+                // ),
 
                 Material(
                   color: AppColors.primary,

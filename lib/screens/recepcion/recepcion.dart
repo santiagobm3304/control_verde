@@ -1,10 +1,11 @@
 import 'package:control_verde/controller/files/files_controller.dart';
-import 'package:control_verde/screens/discrepancias/discrepancias_screen.dart';
+import 'package:control_verde/screens/recepcion/discrepancias/discrepancias_screen.dart';
 import 'package:control_verde/screens/donaciones/donaciones_screen.dart';
-import 'package:control_verde/screens/recepcion/recepcion_screen.dart';
+import 'package:control_verde/screens/recepcion/conteo/recepcion_screen.dart';
 import 'package:control_verde/services/reporte_service.dart';
 
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:control_verde/widgets/cardInicio.dart';
 
 import 'package:flutter/material.dart';
@@ -14,24 +15,23 @@ class RecepcionScreen extends StatelessWidget {
 
   Future<void> _showDialogSelectedAction(BuildContext context,
       {required String action, required String motivo}) async {
-    final service = ReporteService();
-    print(motivo);
-    List<int> tims = await service.buscarPorMotivo(motivo);
     int? selectedTim;
-
+    final service = ReporteService();
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Cargando TIMS');
+    List<int> tims = await service.buscarPorMotivo(motivo);
+    Navigator.pop(dialogContext);
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: Text("Selecciona una TIM"),
+              title: Text("TIMS"),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(action == 'eliminar'
-                      ? "Selecciona la TIM que se finalizará el conteo:"
-                      : "Selecciona la TIM en la que vas a trabajar:"),
+                  Text("Selecciona la TIM  la cuál se va a $action:"),
                   const SizedBox(height: 20),
                   ...tims.map((tim) {
                     return RadioListTile<int>(
@@ -51,13 +51,17 @@ class RecepcionScreen extends StatelessWidget {
                   child: Text("Cancelar"),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (selectedTim != null) {
                       Navigator.pop(context);
                       switch (action) {
                         case 'eliminar':
-                        final serviceR = ReporteService();
+                          final serviceR = ReporteService();
+                          final dialogContext = await loading.instance
+                              .showLoadingDialog(context, 'Eliminando TIM');
                           serviceR.eliminarTim(selectedTim!);
+                          Navigator.pop(dialogContext);
+
                           break;
 
                         case 'trabajar':
@@ -120,13 +124,12 @@ class RecepcionScreen extends StatelessWidget {
               icon: Icon(Icons.upload_file,
                   size: 40, color: AppColors.verdeClaro),
               title: 'Subir Reporte TIM',
-              onTap: (context) => FilesController.instance.handleFileSelection(
-                context,1
-              ),
+              onTap: (context) =>
+                  FilesController.instance.handleFileSelection(context, 1),
             ),
             CustomGridCard(
                 icon: Icon(Icons.list, size: 40, color: AppColors.verdeClaro),
-                title: 'Recepción',
+                title: 'Conteo',
                 onTap: (context) => _showDialogSelectedAction(context,
                     action: 'trabajar', motivo: 'T')),
             CustomGridCard(
@@ -138,7 +141,7 @@ class RecepcionScreen extends StatelessWidget {
                     color: AppColors.verdeClaro,
                   ),
                 ),
-                title: 'Faltantes y Sobrantes',
+                title: 'Bitácora',
                 onTap: (context) => _showDialogSelectedAction(context,
                     action: 'discrepar', motivo: 'T')),
             CustomGridCard(

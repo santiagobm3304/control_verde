@@ -22,9 +22,9 @@ class ReporteTim {
       'id': id,
       'tim': tim,
       'placa': placa,
-      'local_origen': localOrigen,
-      'local_destino': localDestino,
-      'fecha_envio': fechaEnvio,
+      'localOrigen': localOrigen,
+      'localDestino': localDestino,
+      'fechaEnvio': fechaEnvio,
       'motivo': motivo,
     };
   }
@@ -34,9 +34,9 @@ class ReporteTim {
       id: map['id'] as int?,
       tim: map['tim'] as int,
       placa: map['placa'] as String,
-      localOrigen: map['local_origen'] as String,
-      localDestino: map['local_destino'] as String,
-      fechaEnvio: map['fecha_envio'] as String,
+      localOrigen: map['localOrigen'] as String,
+      localDestino: map['localDestino'] as String,
+      fechaEnvio: map['fechaEnvio'] as String,
       motivo: map['motivo'] as String,
     );
   }
@@ -45,8 +45,8 @@ class ReporteTim {
       id: json['id'],
       tim: json['tim'],
       placa: json['placa'],
-      localOrigen: json['localOrigen'],
-      localDestino: json['localDestino'],
+      localOrigen: json['origen'],
+      localDestino: json['destino'],
       fechaEnvio: json['fechaEnvio'],
       motivo: json['motivo'],
     );

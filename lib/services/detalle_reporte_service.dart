@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:control_verde/model/detalle_reporte_model.dart';
-import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/services/socket_service.dart';
 import 'package:http/http.dart' as http;
@@ -17,7 +16,7 @@ class DetalleReporteService {
         final List<dynamic> jsonList = jsonDecode(response.body);
 
         // Verificamos que realmente venga una lista
-        if (jsonList is List) {
+        if (jsonList.isNotEmpty) {
           return jsonList.map((json) => Reporte.fromJson(json)).toList();
         } else {
           print('Respuesta no es una lista');
@@ -33,7 +32,31 @@ class DetalleReporteService {
     }
   }
 
-  Future<bool> actualizarRecibidos(String id, double uRecibidas) async {
+  Future<List<Reporte>> detalleReportesInventario(String motivo, String ean) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/'));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = jsonDecode(response.body);
+
+        // Verificamos que realmente venga una lista
+        if (jsonList.isNotEmpty) {
+          return jsonList.map((json) => Reporte.fromJson(json)).toList();
+        } else {
+          print('Respuesta no es una lista');
+          return [];
+        }
+      } else {
+        print('Error de servidor: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      print('Error al obtener detalles por sala: $e');
+      return [];
+    }
+  }
+
+  Future<bool> actualizarRecibidos(String id, double uRecibidas, String sala) async {
     final socketId = SocketService().socketId;
 
     final response = await http.post(
@@ -43,6 +66,7 @@ class DetalleReporteService {
         'id': id,
         'uRecibidas': uRecibidas,
         'socketId': socketId,
+        'salaId': sala,
       }),
     );
 
@@ -55,7 +79,7 @@ class DetalleReporteService {
     }
   }
 
-  Future<int> actualizarDatosDetalle(DetalleReporte detalleReporte) async {
+  Future<int> actualizarDatosDetalle(Reporte detalleReporte, String sala) async {
     final socketId = SocketService().socketId;
 
     final response = await http.post(
@@ -66,6 +90,7 @@ class DetalleReporteService {
         'uRecibidas': detalleReporte.uRecibidas,
         'fechavencimiento': detalleReporte.fechavencimiento,
         'socketId': socketId,
+        'salaId': sala,
       }),
     );
 
@@ -78,19 +103,29 @@ class DetalleReporteService {
     }
   }
 
-  Future<bool> insertarDetalleReporte(DetalleReporte detalleReporte) async {
+  Future<Reporte> insertarDetalleReporte(DetalleReporte detalleReporte, String sala) async {
+    final socketId = SocketService().socketId;
     final url = Uri.parse('$baseUrl/add');
+    final body = {
+      'detalleReporte': detalleReporte.toJson(),
+      'socketId': socketId,
+      'salaId': sala
+    };
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(detalleReporte.toJson()),
+      body: jsonEncode(body),
     );
 
-    if (response.statusCode == 200) {
-      return true;
+    if (response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      final producto = data['resultado'];
+      print(producto);
+      final result = Reporte.fromJson(producto);
+      print(result);
+      return result;
     } else {
-      print('Error al insertar detalle reporte: ${response.body}');
-      return false;
+      throw Exception('Error al insertar detalle reporte: ${response.body}');
     }
   }
 
@@ -133,5 +168,24 @@ class DetalleReporteService {
     print('🎉 Todos los lotes fueron procesados');
     return true;
   }
-  
+
+  Future<bool> eliminarDetalleReporte(String id, String sala) async {
+    final socketId = SocketService().socketId;
+    final url = Uri.parse('$baseUrl/delete/$id');
+    final body = {
+      'socketId': socketId,
+      'salaId': sala
+    };
+    final response = await http.delete(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      print('Error: ${response.body}');
+      return false;
+    }
+  }
 }

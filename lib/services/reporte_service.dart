@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 import 'package:http/http.dart' as http;
 
@@ -14,8 +13,8 @@ class ReporteService {
     final body = jsonEncode({
       'tim': reporteTim.tim,
       'placa': reporteTim.placa,
-      'origen': reporteTim.localOrigen,
-      'destino': reporteTim.localDestino,
+      'localOrigen': reporteTim.localOrigen,
+      'localDestino': reporteTim.localDestino,
       'fechaEnvio': reporteTim.fechaEnvio,
       'estado': true,
       'motivo': reporteTim.motivo

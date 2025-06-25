@@ -31,7 +31,7 @@ class loading {
                 CircularProgressIndicator(),
                 SizedBox(height: 15),
                 Text(
-                  'Procesando: $fileName',
+                  '$fileName',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -40,7 +40,7 @@ class loading {
                 ),
                 SizedBox(height: 10),
                 Text(
-                  'Por favor, espera mientras procesamos el archivo.',
+                  'Por favor, espera mientras procesamos los datos.',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey[600],

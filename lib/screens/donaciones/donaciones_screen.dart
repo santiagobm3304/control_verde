@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/inicio_screeen.dart';
 import 'package:control_verde/model/detalle_reporte_model.dart';
 import 'package:control_verde/model/producto_model.dart';
@@ -16,7 +15,6 @@ import 'package:control_verde/utils/recepcion_producto_detalle.dart';
 import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/utils/app_colors.dart';
-import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:excel/excel.dart'
     show Sheet, Excel, TextCellValue, DoubleCellValue;
 import 'package:flutter/material.dart';
@@ -39,7 +37,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
   Map<String, String> subDeptMap = {
     'Carnes': 'J03',
     'Frutas': 'J040101',
-    'Verduras': 'J040102',
+    'Verduras ': 'J040102',
     'Fiambres y Huevos': 'J0501',
     'Leches': 'J050201',
     'Mantequillas': 'J050202',
@@ -68,18 +66,64 @@ class _ProductListScreenState extends State<ProductListScreen> {
   @override
   void initState() {
     super.initState();
-    SocketService().init();
-    // final socket = SocketService().socket;
+    SocketService().joinSala(widget.selectedTim.toString());
 
-    // socket.on('producto-actualizado', (data) async {
-    //   print('🟡 Producto actualizado desde otro dispositivo: $data');
-    //   await _reCargaProductos();
-    //   _actualizarFiltro();
-    //   // Aquí actualizas tu lista o estado
-    // });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cargarProductos(); // ya se puede usar context
+    final socket = SocketService().socket;
+    SocketService().onReconectado = _recargarVista;
+
+    socket.on('producto-agregado', (data) {
+      if (!mounted) return;
+      print(data);
+      final nuevoProducto = Reporte.fromJson(data);
+      print(nuevoProducto);
+      setState(() {
+        _productos.add(nuevoProducto);
+      });
+      _actualizarFiltro();
     });
+
+    socket.on('producto-eliminado', (data) {
+      if (!mounted) return;
+      print(data);
+      final id = data;
+      setState(() {
+        _productos.removeWhere((p) => p.id == id);
+      });
+      _actualizarFiltro();
+    });
+
+    socket.on('producto-actualizado', (data) {
+      if (!mounted) return;
+      final id = data['_id'];
+      final nuevasURecibidas = double.tryParse(data['uRecibidas'].toString());
+
+      if (nuevasURecibidas == null) return;
+
+      final index = _productos.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        setState(() {
+          _productos[index].uRecibidas = nuevasURecibidas;
+          _productos[index].fastRegister = nuevasURecibidas > 0;
+          print(_productos[index].uRecibidas);
+        });
+      }
+      _actualizarFiltro();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarProductos();
+    });
+  }
+
+  @override
+  void dispose() {
+    SocketService().leaveSala();
+    super.dispose();
+  }
+
+  void _recargarVista() async {
+    print('♻️ Vista recargada por reconexión');
+    await _cargarProductos();
+    _actualizarFiltro();
   }
 
   Future<void> _cargarProductos() async {
@@ -106,53 +150,85 @@ class _ProductListScreenState extends State<ProductListScreen> {
     }
   }
 
-  Future<void> _reCargaProductos() async {
-    try {
-      final serviceDR = DetalleReporteService();
-      final productos =
-          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+  // Future<void> _reCargaProductos() async {
+  //   try {
+  //     final serviceDR = DetalleReporteService();
+  //     final productos =
+  //         await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
 
-      setState(() {
-        _productos = productos;
-        _subDeptOptions = productos
-            .map((item) => item.subdpto) // Extraer los subdepartamentos
-            .toSet() // Eliminar duplicados
-            .toList(); // Conviertir de nuevo a lista
-        _productosFiltrados = productos;
-      });
-    } catch (error) {
-      print('Error al cargar productos: $error');
-    }
+  //     setState(() {
+  //       _productos = productos;
+  //       _subDeptOptions =
+  //           productos.map((item) => item.subdpto).toSet().toList();
+  //       _productosFiltrados = productos;
+  //     });
+  //   } catch (error) {
+  //     print('Error al cargar productos: $error');
+  //   }
+  // }
+
+  String extraerCodigoCentral(String input) {
+    String limpio =
+        input.replaceFirst(RegExp(r'^0+'), '').replaceFirst(RegExp(r'0+$'), '');
+    if (limpio.length < 8) return limpio;
+    int inicio = (limpio.length / 2).floor() - 4;
+    return limpio.substring(inicio, inicio + 8);
   }
 
   void _actualizarFiltro() async {
     setState(() {
       _productosFiltrados = _productos.where((item) {
-        bool descripcionMatch = _descripcionFiltro == null ||
-            item.descripcion
+        final descripcionMatch = _descripcionFiltro == null ||
+            (item.descripcion
                 .toLowerCase()
-                .contains(_descripcionFiltro!.toLowerCase());
-        bool eanMatch = _eanFiltro == null || _eanFiltro!.length <= 8
-            ? item.sku.contains(_eanFiltro ?? '')
-            : item.ean.contains(_eanFiltro ?? '');
-        bool subDeptMatch = _subDeptFiltro == null ||
-            item.subdpto.toLowerCase().contains(_subDeptFiltro!.toLowerCase());
+                .contains(_descripcionFiltro!.toLowerCase()));
+
+        final subDeptMatch = _subDeptFiltro == null ||
+            (item.subdpto
+                .toLowerCase()
+                .contains(_subDeptFiltro!.toLowerCase()));
+
+        bool eanMatch = true;
+        if (_eanFiltro != null && _eanFiltro!.isNotEmpty) {
+          eanMatch = item.sku.contains(_eanFiltro!);
+          if (!eanMatch) {
+            eanMatch = item.ean.contains(_eanFiltro!);
+          }
+        }
+
         return descripcionMatch && eanMatch && subDeptMatch;
       }).toList();
+
       _productosFiltrados
           .sort((a, b) => a.descripcion.compareTo(b.descripcion));
     });
 
-    if (_productosFiltrados.isEmpty) {
+    if (_productosFiltrados.isEmpty && _eanFiltro != null) {
+      final posibleSku = extraerCodigoCentral(_eanFiltro!);
+      if (posibleSku.isNotEmpty) {
+        final encontrados =
+            _productos.where((item) => item.sku.contains(posibleSku)).toList();
+
+        if (encontrados.isNotEmpty) {
+          setState(() {
+            _productosFiltrados = encontrados;
+          });
+          return;
+        }
+      }
+
       final service = ProductoService();
       final productoGenal = await service.obtenerProductoPorCodigo(_eanFiltro!);
       setState(() {
         _productoGenernal = productoGenal;
+        _productosFiltrados = [];
       });
     }
   }
 
   Future<void> _insertarProductoSobrante(Producto productoSobrante) async {
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, 'Agregando producto');
     try {
       final serviceDR = DetalleReporteService();
       final reporteDR = DetalleReporte(
@@ -165,44 +241,49 @@ class _ProductListScreenState extends State<ProductListScreen> {
         fechavencimiento: '',
         observacion: 'DONACION',
       );
-      await serviceDR.insertarDetalleReporte(reporteDR);
-      await _reCargaProductos();
+      Reporte result = await serviceDR.insertarDetalleReporte(
+          reporteDR, widget.selectedTim.toString());
+      print(result);
+      setState(() {
+        _productos.add(result);
+      });
       _actualizarFiltro();
-      AwesomeDialog(
-        context: context,
-        dialogType: DialogType.success,
-        headerAnimationLoop: false,
-        title: 'Éxito',
-        desc: 'El producto fue agregado como sobrante exitosamente.',
-        btnOkOnPress: () {},
-      ).show();
+      Navigator.pop(dialogContext);
+      alert.showSuccessDialog(context, "Se agregó el producto como sobrante");
     } catch (e) {
-      AwesomeDialog(
-        context: context,
-        dialogType: DialogType.error,
-        headerAnimationLoop: false,
-        title: 'Error',
-        desc: 'Hubo un problema al agregar el producto como sobrante. $e',
-        btnOkOnPress: () {},
-      ).show();
+      Navigator.pop(dialogContext);
+      alert.showErrorDialog(
+          context, "Hubo un error al agregar el producto como sobrante");
     }
   }
 
-  void _showReportDetails(BuildContext context, Reporte report) {
-    showDialog(
+  void _showReportDetails(BuildContext context, Reporte report) async {
+    final Reporte? result = await showDialog<Reporte>(
       context: context,
       builder: (BuildContext context) {
         return ReportDetailsDialog(
           report: report,
-          onSave: () async {
-            await _reCargaProductos();
-            _actualizarFiltro();
-            // reportes = await _loadReports();
-            // _filterReports("");
-          },
+          onSave: () {},
         );
       },
     );
+    if (result != null) {
+      final dialogContext = await loading.instance
+          .showLoadingDialog(context, "Actualizando Datos");
+      final index = _productos.indexWhere((p) => p.id == result.id);
+      print(result);
+      print(index);
+      if (index != -1) {
+        setState(() {
+          _productos[index] = result;
+          _actualizarFiltro();
+          print(_productos[index]);
+        });
+        Navigator.pop(dialogContext);
+        return;
+      }
+      Navigator.pop(dialogContext);
+    }
   }
 
   Future<bool> _mostrarConfirmacion() async {
@@ -217,8 +298,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 TextButton(
                   child: Text('Cancelar'),
                   onPressed: () {
-                    Navigator.of(context)
-                        .pop(false); // Regresar false al cerrar el diálogo
+                    Navigator.of(context).pop(false);
                   },
                 ),
                 TextButton(
@@ -231,37 +311,26 @@ class _ProductListScreenState extends State<ProductListScreen> {
             );
           },
         )) ??
-        false; // Si showDialog retorna null, retornamos false por defecto
+        false;
   }
 
   void _deleteDonacion(BuildContext context, int tim) async {
+    final dialogContext = await loading.instance
+        .showLoadingDialog(context, "Eliminando Donación");
     try {
       final serviceR = ReporteService();
       await serviceR.eliminarTim(tim);
-      AwesomeDialog(
-        context: context,
-        dialogType: DialogType.success,
-        headerAnimationLoop: false,
-        title: 'Éxito',
-        desc: 'El registro de donaciones fue eliminado exitosamente.',
-        btnOkOnPress: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => InicioScreen(),
-            ),
-          );
-        },
-      ).show();
+      Navigator.pop(dialogContext);
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => InicioScreen(),
+          ));
+
+      alert.showSuccessDialog(context, "La donación se eliminó correctamente");
     } catch (e) {
-      AwesomeDialog(
-        context: context,
-        dialogType: DialogType.error,
-        headerAnimationLoop: false,
-        title: 'Error',
-        desc: '',
-        btnOkOnPress: () {},
-      ).show();
+      Navigator.pop(dialogContext);
+      alert.showErrorDialog(context, "Hubo un error al eliminar la donación");
     }
   }
 
@@ -270,7 +339,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogcontext) {
         return AlertDialog(
           title: const Text('Exportar Reporte'),
           content: Column(
@@ -303,29 +372,14 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   final String nombreUsuario = _textController.text;
 
                   if (nombreUsuario.isNotEmpty) {
-                    _cargarProductos();
-                    String filePath =
-                        await exportToExcel(_productos, nombreUsuario);
-
-                    AwesomeDialog(
-                      context: context,
-                      dialogType: DialogType.success,
-                      animType: AnimType.scale,
-                      title: 'Archivo exportado',
-                      desc: 'El archivo ha sido guardado en: $filePath',
-                      btnOkOnPress: () {
-                        Navigator.of(context).pop();
-                      },
-                    ).show();
+                    await _cargarProductos();
+                    await exportToExcel(_productos, nombreUsuario);
+                    Navigator.of(dialogcontext).pop();
+                    alert.showSuccessDialog(
+                        context, "El archivo se exportó correctamente.");
                   } else {
-                    AwesomeDialog(
-                      context: context,
-                      dialogType: DialogType.warning,
-                      animType: AnimType.scale,
-                      title: 'Ingrese su Nombre',
-                      desc: 'Es necesario el nombre del Preventor',
-                      btnOkOnPress: () {},
-                    ).show();
+                    alert.showErrorDialog(
+                        context, "Por favor, ingrese un nombre válido.");
                   }
                 },
                 child: const Text(
@@ -342,6 +396,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
   }
 
   Future<String> exportToExcel(List<Reporte> reports, String nombre) async {
+    final dialogContext =
+        await loading.instance.showLoadingDialog(context, "Exportando a Excel");
     var excel = Excel.createExcel();
     excel.delete('Sheet1');
     String formattedDate = DateFormat('dd-MM-yy').format(DateTime.now());
@@ -380,8 +436,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
       contador++;
     }
 
-    String fileName = 'donacion $formattedDate.xlsx';
-
+    String fileName = 'DONACION $formattedDate.xlsx';
     try {
       final downloadDirectory = Directory('/storage/emulated/0/Download');
       final filePath = '${downloadDirectory.path}/$fileName';
@@ -395,6 +450,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
       return filePath;
     } catch (e) {
       return "Error $e";
+    } finally {
+      Navigator.pop(dialogContext);
     }
   }
 
@@ -456,32 +513,23 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
 
     if (confirm == true) {
+      final dialogContext = await loading.instance
+          .showLoadingDialog(context, "Eliminando producto");
       try {
-        await DatabaseHelper.instance.deleteReporte(widget.selectedTim,
-            producto.ean); // Asegúrate que esta función exista
+        final serviceDR = DetalleReporteService();
+        await serviceDR.eliminarDetalleReporte(producto.id,
+            widget.selectedTim.toString()); // Asegúrate que esta función exista
 
         setState(() {
           _productos.removeWhere((p) => p.id == producto.id);
-          _productosFiltrados.removeWhere((p) => p.id == producto.id);
         });
-
-        AwesomeDialog(
-          context: context,
-          dialogType: DialogType.success,
-          animType: AnimType.rightSlide,
-          title: 'Producto eliminado',
-          desc: 'El producto fue eliminado exitosamente.',
-          btnOkOnPress: () {},
-        ).show();
+        _actualizarFiltro();
+        Navigator.pop(dialogContext);
+        alert.showSuccessDialog(
+            context, "El producto fue eliminado exitosamente.");
       } catch (e) {
-        AwesomeDialog(
-          context: context,
-          dialogType: DialogType.error,
-          animType: AnimType.leftSlide,
-          title: 'Error',
-          desc: 'No se pudo eliminar el producto.',
-          btnOkOnPress: () {},
-        ).show();
+        Navigator.pop(dialogContext);
+        alert.showErrorDialog(context, "Hubo un error al eliminar el producto");
       }
     }
   }
@@ -581,6 +629,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                           Expanded(
                             child: TextFormField(
                               controller: _codigoController,
+                              keyboardType: TextInputType.number,
                               decoration: InputDecoration(
                                 border: OutlineInputBorder(
                                   borderSide:
@@ -618,6 +667,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                     } else {
                                       setState(() {
                                         _codigoController.clear();
+                                        _productoGenernal = null;
+
                                         _eanFiltro = null;
                                       });
                                       _actualizarFiltro();
@@ -828,21 +879,20 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                             width: 15,
                                           ),
                                           TextButton.icon(
-                                            onPressed: () {
+                                            onPressed: () async {
                                               if (unidadesAddTim != null &&
                                                   unidadesAddTim! > 0 &&
                                                   _productoGenernal != null) {
-                                                _insertarProductoSobrante(
+                                                await _insertarProductoSobrante(
                                                     _productoGenernal!);
+
+                                                _controllerAddTim.clear();
+                                                _productoGenernal = null;
                                               } else {
-                                                AwesomeDialog(
-                                                  context: context,
-                                                  dialogType: DialogType.error,
-                                                  headerAnimationLoop: false,
-                                                  title: 'Error',
-                                                  desc: 'Agregue una cantidad.',
-                                                  btnOkOnPress: () {},
-                                                ).show();
+                                                alert.showErrorDialog(
+                                                  context,
+                                                  "Debe ingresar una cantidad válida para agregar el producto.",
+                                                );
                                               }
                                             },
                                             label: const Text(
@@ -880,7 +930,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Se recomienda actualizar su profundidad',
+                                        'Escanee un producto para agregarlo.',
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,

@@ -1,6 +1,8 @@
 
 import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/reporte_model.dart';
+import 'package:control_verde/services/detalle_reporte_service.dart';
+import 'package:control_verde/services/reporte_service.dart';
 import 'package:control_verde/utils/recepcion_producto_detalle.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/utils/app_colors.dart';
@@ -42,12 +44,12 @@ class _InventarioProducto extends State<InventarioProducto> {
 
   Future<void> _cargarReportes() async {
     try {
+      final serviceR = ReporteService();
       final reporteInfo =
-          await DatabaseHelper.instance.getTimsByMotivo(widget.motivo);
+          await serviceR.buscarPorMotivo(widget.motivo);
 
       setState(() {
         reportesInfo = reporteInfo;
-        _productosBySku = [];
       });
     } catch (error) {
       print('Error al cargar productos: $error');
@@ -55,6 +57,8 @@ class _InventarioProducto extends State<InventarioProducto> {
   }
 
   Future<void> _actualizarFiltro() async {
+    final serviceDR = DetalleReporteService();
+    final productosEncontrados = await serviceDR.detalleReportesInventario(widget.motivo, _eanFiltro!);
     setState(() async {
       _productosBySku =
           await DatabaseHelper.instance.getReportesbyEan(_eanFiltro!);
