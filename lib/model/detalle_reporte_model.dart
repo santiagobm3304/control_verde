@@ -7,6 +7,7 @@ class DetalleReporte {
   double uRecibidas;
   String fechavencimiento;
   String observacion;
+  String? modificadoPor;
   bool fastRegister;
 
   DetalleReporte({
@@ -18,6 +19,7 @@ class DetalleReporte {
     required this.uRecibidas,
     required this.fechavencimiento,
     required this.observacion,
+    required this.modificadoPor,
     bool? fastRegister,
   }) : fastRegister = fastRegister ?? (uRecibidas != 0);
 
@@ -30,6 +32,7 @@ class DetalleReporte {
       'uEnviadas': uEnviadas,
       'uRecibidas': uRecibidas,
       'fechavencimiento': fechavencimiento,
+      'modificadoPor': modificadoPor,
       'observacion': observacion,
     };
   }
@@ -42,6 +45,7 @@ class DetalleReporte {
         'uEnviadas': uEnviadas,
         'uRecibidas': uRecibidas,
         'fechavencimiento': fechavencimiento,
+        'modificadoPor': modificadoPor,
         'observacion': observacion,
       };
 
@@ -59,6 +63,10 @@ class DetalleReporte {
           map.containsKey('fechavencimiento') && map['fechavencimiento'] != null
               ? map['fechavencimiento'].toString()
               : '',
+      modificadoPor:
+          map.containsKey('modificadoPor') && map['modificadoPor'] != null
+              ? map['modificadoPor'].toString()
+              : '',
       observacion: map.containsKey('observacion') && map['observacion'] != null
           ? map['observacion'].toString()
           : '',
@@ -66,6 +74,6 @@ class DetalleReporte {
   }
   @override
   String toString() {
-    return 'Reporte{id: $id, tim: $tim, olpn: $olpn, sku: $sku, uEnviadas: $uEnviadas, uRecibidas: $uRecibidas, fechavencimiento: $fechavencimiento, observacion: $observacion}';
+    return 'Reporte{id: $id, tim: $tim, olpn: $olpn, sku: $sku, uEnviadas: $uEnviadas, uRecibidas: $uRecibidas, fechavencimiento: $fechavencimiento, modificadoPor: $modificadoPor, observacion: $observacion}';
   }
 }

@@ -1,71 +1,76 @@
-import 'dart:convert';
-import 'package:control_verde/database/database_helper.dart';
-import 'package:control_verde/services/socket_service.dart';
-import 'package:http/http.dart' as http;
+import 'package:control_verde/utils/session_helper.dart';
+import 'package:flutter/material.dart';
+import 'package:control_verde/utils/http.dart';
 import 'package:control_verde/model/producto_model.dart';
 
 class ProductoService {
-  final String baseUrl =
-      'https://controlverdebackend.onrender.com/api/productos';
+  final httpService = HttpService();
 
-  Future<Producto?> obtenerProductoPorCodigo(String codigo) async {
-    final url = Uri.parse('$baseUrl/buscar/$codigo');
+  // ----------------------------------------------------------
+  // Obtener producto por código (EAN o SKU)
+  // ----------------------------------------------------------
+  Future<Producto?> obtenerProductoPorCodigo(
+    BuildContext context,
+    String codigo,
+  ) async {
+    final endpoint = "/productos/buscar/$codigo";
 
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Producto.fromJson(data['producto']);
-    } else {
-      print('Error: ${response.statusCode}');
+    final res = await httpService.peticionGET(endpoint);
+
+    if (res.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: res.mensaje);
       return null;
     }
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(res.mensaje)));
+      return null;
+    }
+    return Producto.fromJson(res.datos);
   }
 
-  Future<bool> crearProductosEnLote(List<Producto> productos,
-      {int chunkSize = 500, int maxRetries = 3}) async {
-    final url = Uri.parse('$baseUrl/lote');
-    final headers = {'Content-Type': 'application/json'};
-
+  // ----------------------------------------------------------
+  // Crear productos en lote
+  // ----------------------------------------------------------
+  Future<bool> crearProductosEnLote(
+    BuildContext context,
+    List<Producto> productos, {
+    int chunkSize = 500,
+  }) async {
     for (var i = 0; i < productos.length; i += chunkSize) {
       final chunk = productos.skip(i).take(chunkSize).toList();
-      final body = jsonEncode(chunk.map((p) => p.toMap()).toList());
+      final chunkMap = chunk.map((p) => p.toMap()).toList();
 
-      int retryCount = 0;
-      bool success = false;
+      final res = await httpService
+          .peticionPOST("/productos/lote", {"productos": chunkMap});
 
-      while (!success && retryCount < maxRetries) {
-        final response = await http.post(url, headers: headers, body: body);
-
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          print('✅ Lote ${i ~/ chunkSize + 1} cargado con éxito');
-          success = true;
-        } else {
-          retryCount++;
-          print(
-              '❌ Error al cargar lote ${i ~/ chunkSize + 1}, intento $retryCount');
-          print('Código: ${response.statusCode}');
-          print('Respuesta: ${response.body}');
-          await Future.delayed(
-              Duration(seconds: 2)); // espera antes de reintentar
-        }
+      if (res.status == 403) {
+        await SesionHelper.cerrarSesion(context, mensaje: res.mensaje);
+        return false;
       }
 
-      if (!success) {
-        print(
-            '🚫 Falló el lote ${i ~/ chunkSize + 1} después de $maxRetries intentos.');
-        // Puedes seguir o retornar false si prefieres detener
+      if (!res.success) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(res.mensaje)));
+        return false;
       }
+
+      print("Chunk cargado: ${i ~/ chunkSize + 1}");
     }
 
-    print('🎉 Todos los lotes fueron procesados');
+    print("Todos los lotes procesados");
     return true;
   }
 
-  Future<Producto?> crearProducto(Producto producto) async {
-    final url = Uri.parse('$baseUrl/add');
-    final headers = {'Content-Type': 'application/json'};
-
-    final body = jsonEncode({
+  // ----------------------------------------------------------
+  // Crear un producto individual
+  // ----------------------------------------------------------
+  Future<Producto?> crearProducto(
+    BuildContext context,
+    Producto producto,
+  ) async {
+    final body = {
       'sku': producto.sku,
       'ean': producto.ean,
       'subdpto': producto.subdpto,
@@ -76,69 +81,108 @@ class ProductoService {
       'costoPromedio': producto.costoPromedio,
       'precioVigente': producto.precioVigente,
       'uMedida': producto.uMedida,
-    });
+    };
 
-    final response = await http.post(url, headers: headers, body: body);
+    final res = await httpService.peticionPOST("/productos/add", body);
 
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      print('Producto creado con éxito: ${producto.sku}');
-      print(producto.ean);
-      print(producto.uMedida);
-      final dbHelper = DatabaseHelper.instance;
-      await dbHelper.updateReporteDesdeServidor(
-          producto.sku, producto.ean, producto.uMedida);
-      
-      return producto;
-    } else {
-      print('Error al crear producto: ${response.statusCode}');
-      print(response.body);
+    if (res.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: res.mensaje);
       return null;
     }
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(res.mensaje)));
+      return null;
+    }
+
+    return producto;
   }
 
-  Future<bool> actualizarProducto(Producto producto) async {
-    final socketId = SocketService().socketId;
+  // ----------------------------------------------------------
+  // Actualizar producto
+  // ----------------------------------------------------------
+  Future<bool> actualizarProducto(
+    BuildContext context,
+    Producto producto,
+  ) async {
+    final body = {
+      'sku': producto.sku,
+      'ean': producto.ean,
+      'uMedida': producto.uMedida,
+    };
 
-    final response = await http.post(
-      Uri.parse('$baseUrl/updatep'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'sku': producto.sku,
-        'ean': producto.ean,
-        'uMedida': producto.uMedida,
-        'socketId': socketId,
-      }),
-    );
+    final res = await httpService.peticionPOST("/productos/updatep", body);
 
-    if (response.statusCode == 200) {
-      print('✅ Actualización exitosa');
-      return true;
-    } else {
-      print('❌ Error al actualizar: ${response.body}');
+    if (res.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: res.mensaje);
       return false;
     }
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error al actualizar: ${res.mensaje}")),
+      );
+      return false;
+    }
+
+    return true;
   }
 
-  Future<Map<String, dynamic>> fetchProductosPorSkus(Set<String> skus) async {
-    final response = await http.post(
-      Uri.parse('${baseUrl}/by-skus'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'skus': skus.toList()}),
+  // ----------------------------------------------------------
+  // Obtener productos por muchos SKUs
+  // ----------------------------------------------------------
+  Future<Map<String, dynamic>> fetchProductosPorSkus(
+    BuildContext context,
+    Set<String> skus,
+  ) async {
+    final res = await httpService.peticionPOST(
+      "/productos/by-skus",
+      {"skus": skus.toList()},
     );
 
-    if (response.statusCode == 200) {
-      final List productos = jsonDecode(response.body);
-      return {
-        for (var p in productos)
-          p['sku']: {
-            'ean': p['ean'],
-            'costoPromedio': p['costoPromedio'],
-            'precioVigente': p['precioVigente'],
-            'uMedida': p['uMedida'],
-          }
-      };
-    } else {
-      throw Exception('Error al obtener productos del backend');
+    if (res.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: res.mensaje);
+      return {};
     }
+
+    if (!res.success) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(res.mensaje)));
+      return {};
+    }
+
+    final List productos = res.datos;
+
+    return {
+      for (var p in productos)
+        p['sku']: {
+          'ean': p['ean'],
+          'costoPromedio': p['costoPromedio'],
+          'precioVigente': p['precioVigente'],
+          'uMedida': p['uMedida'],
+        }
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Obtener productos según subdepartamentos
+  // ----------------------------------------------------------
+  Future<List<Map<String, dynamic>>> fetchProductosDesdeBackend(BuildContext context) async {
+    final response = await httpService.peticionGET('/productos/por-subdptos');
+
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: response.mensaje);
+      return [];
+    }
+
+    if (response.status != 200 || response.datos == null) {
+      throw Exception('Error al obtener productos');
+    }
+
+    // 👇 OJO AQUÍ
+    final List data = response.datos as List;
+
+    return data.cast<Map<String, dynamic>>();
   }
 }

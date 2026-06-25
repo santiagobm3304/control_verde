@@ -24,11 +24,20 @@ class Alerts {
   }
 
   void showWarningDialog(BuildContext context, String message) {
-    showAwesomeDialog(
-      context,
-      type: DialogType.warning,
-      title: 'Advertencia',
-      desc: message,
+    print('📢 Llamando a showWarningDialog con mensaje: $message');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Advertencia'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
     );
   }
 

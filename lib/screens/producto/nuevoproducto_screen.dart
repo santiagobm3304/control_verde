@@ -71,12 +71,14 @@ class _AgregarProductoScreenState extends State<AgregarProductoScreen> {
         costoPromedio: double.tryParse(_costoController.text) ?? 0,
         precioVigente: double.tryParse(_precioController.text) ?? 0,
         casePack: int.tryParse(_casePackController.text) ?? 0,
+        isContable: false,
+        marcaSensible: false,
         uMedida: _uMedidaController.text,
       );
       final dialogContext = await loading.instance.showLoadingDialog(context, 'Actualizando producto');
       try {
         final service = ProductoService();
-        await service.actualizarProducto(nuevoProducto);
+        await service.actualizarProducto(context, nuevoProducto);
         Navigator.pop(dialogContext); // Cierra el diálogo de carga
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Producto se actualizó con éxito')),

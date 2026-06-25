@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:control_verde/utils/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class loading {
@@ -17,34 +18,81 @@ class loading {
         if (!completer.isCompleted) {
           completer.complete(dialogContext);
         }
-        return Center(
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           child: Container(
-            padding: const EdgeInsets.all(20),
+            constraints: BoxConstraints(maxWidth: 340),
+            padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: Offset(0, 10),
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 15),
-                Text(
-                  '$fileName',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black,
+                // Indicador de progreso con estilo personalizado
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.verdeClaro, // Azul profesional
+                    ),
                   ),
                 ),
-                SizedBox(height: 10),
+                SizedBox(height: 24),
+
+                // Título
                 Text(
-                  'Por favor, espera mientras procesamos los datos.',
+                  'Procesando',
                   style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                    letterSpacing: -0.5,
                   ),
+                ),
+                SizedBox(height: 12),
+
+                // Nombre del archivo
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    fileName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF4B5563),
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                SizedBox(height: 16),
+
+                // Mensaje descriptivo
+                Text(
+                  'Por favor, espera mientras procesamos los datos.\nEsto puede tardar unos momentos.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF6B7280),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),

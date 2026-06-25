@@ -1,29 +1,36 @@
+import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/repository/user_repository.dart';
-import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:flutter/material.dart';
 
-class ProductoDetalleDialog extends StatefulWidget {
+class InventarioPereciblesDialog extends StatefulWidget {
   final Reporte report;
+  final String motivo;
   final VoidCallback onSave;
 
-  const ProductoDetalleDialog(
-      {Key? key, required this.report, required this.onSave})
+  const InventarioPereciblesDialog(
+      {Key? key,
+      required this.report,
+      required this.onSave,
+      required this.motivo})
       : super(key: key);
 
   @override
-  _DetalleProductoDialogState createState() => _DetalleProductoDialogState();
+  _InventarioPereciblesDialog createState() => _InventarioPereciblesDialog();
 }
 
-class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
+class _InventarioPereciblesDialog extends State<InventarioPereciblesDialog> {
   late double _count;
   DateTime? selectedDate;
-
-  final TextEditingController _controller = TextEditingController();
-  TextEditingController dateController = TextEditingController();
+  bool nuevoProducto = false;
   final UserRepository _userRepo = UserRepository();
   String? nombre;
+
+  final dataBaseH = DatabaseHelper.instance;
+  final TextEditingController _controller = TextEditingController();
+  TextEditingController dateController = TextEditingController();
 
   String formatDoubleSmart(double value) {
     if (value % 1 == 0) {
@@ -40,32 +47,35 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
     dateController.text = widget.report.fechavencimiento.isEmpty
         ? ""
         : widget.report.fechavencimiento;
-
     _count = widget.report.uRecibidas; //
     _controller.text = formatDoubleSmart(_count);
   }
 
   Future<void> _cargarUsuario() async {
     final nombreUsuario = await _userRepo.getNombreUsuario();
-    if (mounted) {
-      setState(() {
-        nombre = nombreUsuario;
-      });
-    }
-  }
 
-  Future<void> _desbloquearDetalle() async {
-    await DetalleReporteService().cambiarEstadoEdicion(
-      context,
-      widget.report.id,
-      false,
-      widget.report.tim.toString(),
-    );
+    if (!mounted) return;
+
+    setState(() {
+      nombre = nombreUsuario;
+    });
   }
 
   void _increment() {
     setState(() {
-      _count = _count + widget.report.casePack;
+      switch (widget.motivo) {
+        case 'D':
+          _count = _count + 1;
+          break;
+        case 'I':
+          _count = _count + widget.report.casePack;
+          break;
+        case 'T':
+          _count = _count + widget.report.casePack;
+          break;
+        default:
+          _count = _count + 1;
+      }
       _controller.text = formatDoubleSmart(_count);
     });
   }
@@ -96,18 +106,12 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
   @override
   void dispose() {
     dateController.dispose();
-    _desbloquearDetalle();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        await _desbloquearDetalle();
-        return true;
-      },
-      child: AlertDialog(
+    return AlertDialog(
       title: Text(
         '${widget.report.descripcion}',
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -196,7 +200,7 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               SizedBox(width: 30),
               Expanded(
                 child: TextFormField(
-                  initialValue: '${widget.report.ean}',
+                  initialValue: widget.report.ean,
                   decoration: InputDecoration(
                     labelText: 'EAN',
                     labelStyle: TextStyle(
@@ -271,10 +275,11 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               SizedBox(width: 8),
               Expanded(
                 child: TextFormField(
-                  initialValue: '${widget.report.olpn}',
+                  initialValue:
+                      '${widget.report.uRecibidas / widget.report.casePack}',
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
-                    labelText: '#Caja',
+                    labelText: 'Cajas',
                     labelStyle: TextStyle(
                       color: Colors.blue,
                     ),
@@ -307,10 +312,10 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               SizedBox(width: 8),
               Expanded(
                 child: TextFormField(
-                  initialValue: '${widget.report.tim}',
+                  initialValue: '${widget.report.costoPromedio}',
                   textAlign: TextAlign.center,
                   decoration: InputDecoration(
-                    labelText: '#Pallet',
+                    labelText: 'C.P',
                     labelStyle: TextStyle(
                       color: Colors.blue,
                     ),
@@ -394,48 +399,30 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Text(
-                  //   'U. Recibidas:',
-                  //   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  // ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
                         width: 80,
-                        child: Expanded(
-                          child: TextFormField(
-                            controller: _controller,
-                            textAlign: TextAlign.center,
-                            onChanged: _updateCount,
-                            // initialValue:
-                            //     '${widget.report.unidades}',
-                            decoration: InputDecoration(
-                              labelText: 'U. Cont',
-                              enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Colors.grey,
-                                  width: 1.5,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: AppColors.black,
-                                  width: 2.0,
-                                ),
-                              ),
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 8,
-                                horizontal: 12,
-                              ),
+                        child: TextFormField(
+                          controller: _controller,
+                          textAlign: TextAlign.center,
+                          onChanged: _updateCount,
+                          decoration: InputDecoration(
+                            labelText: 'U. Cont',
+                            enabledBorder: OutlineInputBorder(
+                              borderSide:
+                                  BorderSide(color: Colors.grey, width: 1.5),
                             ),
-                            //readOnly: true,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black,
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                  color: AppColors.black, width: 2.0),
                             ),
+                            contentPadding: EdgeInsets.symmetric(
+                                vertical: 8, horizontal: 12),
                           ),
+                          style: TextStyle(fontSize: 16, color: Colors.black),
                         ),
                       ),
                       Column(
@@ -465,6 +452,11 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               ),
             ],
           ),
+          if (widget.report.uEnviadas > _count)
+            Text(
+              '${widget.report.uEnviadas - _count} Faltantes',
+              style: TextStyle(color: AppColors.error, fontSize: 12),
+            )
         ],
       ),
       actions: [
@@ -472,8 +464,7 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(
-              onPressed: () async {
-                await _desbloquearDetalle();
+              onPressed: () {
                 Navigator.of(context).pop();
               },
               style: TextButton.styleFrom(
@@ -485,35 +476,79 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               ),
             ),
             SizedBox(width: 10),
+            //200525
+            // if (widget.report.ean.isEmpty)
+            //   TextButton(
+            //     onPressed: () async {
+            //       final response = await Navigator.push(
+            //         context,
+            //         MaterialPageRoute(
+            //           builder: (context) =>
+            //               AgregarProductoScreen(reporte: widget.report),
+            //         ),
+            //       );
+            //       if (response != null && response['guardado'] == true) {
+            //         Reporte reporteActualizado = Reporte(
+            //           tim: widget.report.tim,
+            //           id: widget.report.id,
+            //           olpn: widget.report.olpn,
+            //           subdpto: widget.report.subdpto,
+            //           ean: response['ean'],
+            //           descripcion: widget.report.descripcion,
+            //           casePack: widget.report.casePack,
+            //           uMedida: response['uMedida'],
+            //           precioVigente: widget.report.precioVigente,
+            //           costoPromedio: widget.report.costoPromedio,
+            //           sku: widget.report.sku,
+            //           uEnviadas: widget.report.uEnviadas,
+            //           uRecibidas: double.tryParse(_controller.text) ??
+            //               widget.report.uRecibidas,
+            //           fechavencimiento: dateController.text,
+            //           observacion: widget.report.observacion,
+            //         );
+            //         widget.onSave();
+            //         Navigator.pop(context, reporteActualizado);
+            //       }
+            //     },
+            //     style: TextButton.styleFrom(
+            //       backgroundColor: Colors.orange,
+            //     ),
+            //     child: const Text(
+            //       'Nuevo Producto',
+            //       style: TextStyle(color: Colors.white),
+            //     ),
+            //   ),
+            // SizedBox(width: 10),
             TextButton(
               onPressed: () async {
                 Reporte reporteActualizado = Reporte(
-                  ean: widget.report.ean,
                   tim: widget.report.tim,
                   id: widget.report.id,
                   olpn: widget.report.olpn,
                   subdpto: widget.report.subdpto,
-                  sku: widget.report.sku,
+                  ean: widget.report.ean,
                   descripcion: widget.report.descripcion,
                   casePack: widget.report.casePack,
                   uMedida: widget.report.uMedida,
-                  costoPromedio: widget.report.costoPromedio,
                   precioVigente: widget.report.precioVigente,
+                  costoPromedio: widget.report.costoPromedio,
+                  sku: widget.report.sku,
                   uEnviadas: widget.report.uEnviadas,
                   uRecibidas: double.tryParse(_controller.text) ??
                       widget.report.uRecibidas,
                   fechavencimiento: dateController.text,
                   modificadoPor: nombre,
+                  editadoPor: widget.report.editadoPor,
+                  isLocked: widget.report.isLocked,
                   observacion: widget.report.observacion,
                 );
-                final serviceDR = DetalleReporteService();
-                int result = await serviceDR.actualizarDatosDetalle(
-                    context, reporteActualizado, widget.report.tim.toString());
-
+                final dialogContext = await loading.instance
+                    .showLoadingDialog(context, 'Actualizando Producto');
+                int result = await dataBaseH.updateReporte(reporteActualizado);
                 if (result > 0) {
                   widget.onSave();
-                  await _desbloquearDetalle();
-                  Navigator.of(context).pop();
+                  Navigator.of(dialogContext).pop();
+                  Navigator.pop(context, reporteActualizado);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error al actualizar el reporte')),
@@ -529,9 +564,8 @@ class _DetalleProductoDialogState extends State<ProductoDetalleDialog> {
               ),
             ),
           ],
-        ),
+        )
       ],
-    ),
     );
   }
 }

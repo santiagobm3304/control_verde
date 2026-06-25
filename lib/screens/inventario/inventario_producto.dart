@@ -1,8 +1,6 @@
-
-import 'package:control_verde/database/database_helper.dart';
+//UBICAR PRODUCTO DEL INVENTARIO
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/services/detalle_reporte_service.dart';
-import 'package:control_verde/services/reporte_service.dart';
 import 'package:control_verde/utils/recepcion_producto_detalle.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/utils/app_colors.dart';
@@ -18,7 +16,6 @@ class InventarioProducto extends StatefulWidget {
 }
 
 class _InventarioProducto extends State<InventarioProducto> {
-  List<Reporte> _productosBySku = [];
   List<Reporte> _productosFiltrados = [];
   String? _eanFiltro;
   bool _filtrosVisbles = true;
@@ -39,32 +36,13 @@ class _InventarioProducto extends State<InventarioProducto> {
   @override
   void initState() {
     super.initState();
-    _cargarReportes();
-  }
-
-  Future<void> _cargarReportes() async {
-    try {
-      final serviceR = ReporteService();
-      final reporteInfo =
-          await serviceR.buscarPorMotivo(widget.motivo);
-
-      setState(() {
-        reportesInfo = reporteInfo;
-      });
-    } catch (error) {
-      print('Error al cargar productos: $error');
-    }
   }
 
   Future<void> _actualizarFiltro() async {
     final serviceDR = DetalleReporteService();
-    final productosEncontrados = await serviceDR.detalleReportesInventario(widget.motivo, _eanFiltro!);
-    setState(() async {
-      _productosBySku =
-          await DatabaseHelper.instance.getReportesbyEan(_eanFiltro!);
-      _productosFiltrados = _productosBySku
-          .where((producto) => reportesInfo.contains(producto.tim))
-          .toList();
+    final productosEncontrados = await serviceDR.detalleReportesInventario(context, widget.motivo, _eanFiltro!);
+    setState(() {
+      _productosFiltrados = productosEncontrados;
     });
   }
 
@@ -74,8 +52,8 @@ class _InventarioProducto extends State<InventarioProducto> {
       builder: (BuildContext context) {
         return ReportDetailsDialog(
           report: report,
+          motivo: widget.motivo,
           onSave: () async {
-            // await _reCargaProductos();
             _actualizarFiltro();
           },
         );

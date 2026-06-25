@@ -1,42 +1,47 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:control_verde/inicio_screeen.dart';
-import 'package:control_verde/model/detalle_reporte_model.dart';
+import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/producto_model.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
 import 'package:control_verde/model/reporte_model.dart';
 import 'package:control_verde/repository/user_repository.dart';
-import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/services/productos_service.dart';
-import 'package:control_verde/services/reporte_service.dart';
-import 'package:control_verde/services/socket_service.dart';
-import 'package:control_verde/utils/loading.dart';
 import 'package:control_verde/utils/alerts.dart';
-import 'package:control_verde/utils/recepcion_producto_detalle.dart';
-import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
+import 'package:control_verde/utils/inventario_perecibles_detalle.dart';
 import 'package:control_verde/screens/qr/mobile_scanner.dart';
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
+import 'package:control_verde/utils/unauthorized.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 import 'package:excel/excel.dart'
-    show Sheet, Excel, TextCellValue, DoubleCellValue;
+    show Sheet, Excel, TextCellValue, IntCellValue, DoubleCellValue;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
-class ProductListScreen extends StatefulWidget {
-  final int selectedTim;
-  const ProductListScreen({required this.selectedTim});
+class InventarioPerecibles extends StatefulWidget {
+  final int selectedInventario;
+
+  const InventarioPerecibles({Key? key, required this.selectedInventario})
+      : super(key: key);
+
   @override
-  _ProductListScreenState createState() => _ProductListScreenState();
+  _PereciblesDetalleScreen createState() => _PereciblesDetalleScreen();
 }
 
-class _ProductListScreenState extends State<ProductListScreen> {
+class _PereciblesDetalleScreen extends State<InventarioPerecibles> {
   List<Reporte> _productos = [];
   List<Reporte> _productosFiltrados = [];
   String? _descripcionFiltro;
   String? _eanFiltro;
-  String? _subDeptFiltro;
   bool _filtrosVisbles = true;
-  final UserRepository _userRepository = UserRepository();
-  String? nombre;
+  bool activarTodo = false;
+  String? _subDeptFiltro;
+  Producto? _productoGenernal;
+
   Map<String, String> subDeptMap = {
     'Carnes': 'J03',
     'Frutas': 'J040101',
@@ -50,132 +55,128 @@ class _ProductListScreenState extends State<ProductListScreen> {
     'Embutidos Congelados': 'J050301',
     'Panadería': 'J06',
     'Platos Preparados': 'J07',
-    'Pizzas': 'J070109',
-    'Vestuario': 'J08',
-    'Hogar': 'J09',
-    'Bazar': 'J10',
-    'Muebles': 'J090204',
-    'Electro': 'J11'
+    'Pizzas': 'J070109'
   };
-  // bool activarTodo = false;
-  Producto? _productoGenernal;
+
   ReporteTim? reportesInfo;
-  final TextEditingController _controllerAddTim = TextEditingController();
-  double? unidadesAddTim;
-  String? _observacionSeleccionada;
   final alert = Alerts.instance;
-  final TextEditingController _codigoController = TextEditingController();
+
+  // TextEditingController _dateDesdeController = TextEditingController();
+  // TextEditingController _dateHastaController = TextEditingController();
+  TextEditingController _codigoController = TextEditingController();
   TextEditingController _descController = TextEditingController();
+  // DateTime? _selectedDesdeDate;
+  // DateTime? _selectedHastaDate;
+  final serviceP = ProductoService();
+  final dataBaseH = DatabaseHelper.instance;
+  String? nombre;
+  final TextEditingController _controllerAddTim = TextEditingController();
+  final UserRepository _userRepo = UserRepository();
+
+  late double cajaAddOlpn = 0;
+  List<int> olpnsUnicos = [];
+  double? unidadesAddTim;
+
   @override
   void initState() {
     super.initState();
-    _cargarUsuario();
-    SocketService().joinSala(widget.selectedTim.toString());
 
-    final socket = SocketService().socket;
-    SocketService().onReconectado = _recargarVista;
-
-    socket.on('producto-agregado', (data) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      print(data);
-      final nuevoProducto = Reporte.fromJson(data);
-      print(nuevoProducto);
-      setState(() {
-        _productos.add(nuevoProducto);
-      });
-      _actualizarFiltro();
-    });
 
-    socket.on('producto-eliminado', (data) {
-      if (!mounted) return;
-      print(data);
-      final id = data;
-      setState(() {
-        _productos.removeWhere((p) => p.id == id);
-      });
-      _actualizarFiltro();
-    });
-
-    socket.on('producto-actualizado', (data) {
-      if (!mounted) return;
-      final id = data['_id'];
-      final nuevasURecibidas = double.tryParse(data['uRecibidas'].toString());
-
-      if (nuevasURecibidas == null) return;
-
-      final index = _productos.indexWhere((p) => p.id == id);
-      if (index != -1) {
-        setState(() {
-          _productos[index].uRecibidas = nuevasURecibidas;
-          _productos[index].fastRegister = nuevasURecibidas > 0;
-          print(_productos[index].uRecibidas);
-        });
-      }
-      _actualizarFiltro();
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cargarProductos();
+      await sincronizarProductos();
+      await _cargarProductos();
     });
   }
 
   @override
   void dispose() {
-    SocketService().leaveSala();
     super.dispose();
   }
 
-  Future<void> _cargarUsuario() async {
-    final nombreUsuario = await _userRepository.getNombreUsuario();
-
+  Future<void> sincronizarProductos() async {
     if (!mounted) return;
 
-    setState(() {
-      nombre = nombreUsuario;
-    });
+    final dialogContext = await loading.instance.showLoadingDialog(
+      context,
+      'Sincronizando Productos, por favor manténgase conectado a internet.',
+    );
+
+    try {
+      final productos = await serviceP.fetchProductosDesdeBackend(context);
+
+      if (!mounted) return;
+      await dataBaseH.guardarProductosLocal(productos);
+
+      // 🔴 Cerrar loading primero
+      Navigator.of(dialogContext, rootNavigator: true).pop();
+
+      // ✅ Luego mostrar modal de éxito
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Productos sincronizados con éxito')),
+        );
+      }
+    } on UnauthorizedException catch (e) {
+      if (mounted) {
+        Navigator.of(dialogContext, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error real: $e');
+      debugPrintStack(stackTrace: stack);
+
+      if (mounted) {
+        Navigator.of(dialogContext, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("❌ Error al sincronizar productos")),
+        );
+      }
+    }
   }
 
-  void _recargarVista() async {
-    print('♻️ Vista recargada por reconexión');
-    await _cargarProductos();
-    _actualizarFiltro();
+  Future<Directory?> getDownloadDirectory() async {
+    if (Platform.isAndroid) {
+      return Directory('/storage/emulated/0/Download');
+    }
+    return null;
   }
 
   Future<void> _cargarProductos() async {
     try {
-      final dialogContext = await loading.instance
-          .showLoadingDialog(context, 'Cargando Productos');
-      final serviceDR = DetalleReporteService();
-      final serviceR = ReporteService();
-
       final productos =
-          await serviceDR.obtenerProductosDeLaTim(context, widget.selectedTim);
-      reportesInfo = await serviceR.obtenerReporte(context, widget.selectedTim);
+          await dataBaseH.getReportesByTim(widget.selectedInventario);
+      final reporteInfo =
+          await dataBaseH.getReporteTimByTim(widget.selectedInventario);
+      final user = await _userRepo.getUser();
+      setState(() {
+        _productos = productos;
+        reportesInfo = reporteInfo;
+        _productosFiltrados = productos;
+        nombre = user?.nombre ?? '';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Cargo ${productos.length} productos")),
+      );
+    } catch (error) {
+      print('Error al cargar productos: $error');
+    }
+  }
+
+  Future<void> _reCargaProductos() async {
+    try {
+      final productos =
+          await dataBaseH.getReportesByTim(widget.selectedInventario);
+
       setState(() {
         _productos = productos;
         _productosFiltrados = productos;
       });
-      Navigator.pop(dialogContext);
     } catch (error) {
-      alert.showErrorDialog(context, 'Error al cargar productos');
+      print('Error al cargar productos: $error');
     }
   }
-
-  // Future<void> _reCargaProductos() async {
-  //   try {
-  //     final serviceDR = DetalleReporteService();
-  //     final productos =
-  //         await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
-
-  //     setState(() {
-  //       _productos = productos;
-  //       _subDeptOptions =
-  //           productos.map((item) => item.subdpto).toSet().toList();
-  //       _productosFiltrados = productos;
-  //     });
-  //   } catch (error) {
-  //     print('Error al cargar productos: $error');
-  //   }
-  // }
 
   String extraerCodigoCentral(String input) {
     String limpio = input.replaceFirst(RegExp(r'^0+'), '');
@@ -230,9 +231,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
         }
       }
 
-      final service = ProductoService();
       final productoGenal =
-          await service.obtenerProductoPorCodigo(context, _eanFiltro!);
+          await dataBaseH.buscarProductoPorCodigo(_eanFiltro!);
       setState(() {
         _productoGenernal = productoGenal;
         _productosFiltrados = [];
@@ -242,265 +242,54 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   Future<void> _insertarProductoSobrante(Producto productoSobrante) async {
     final dialogContext =
-        await loading.instance.showLoadingDialog(context, 'Agregando producto');
+        await loading.instance.showLoadingDialog(context, 'Agregando Producto');
     try {
-      final serviceDR = DetalleReporteService();
-      final reporteDR = DetalleReporte(
+      if (!mounted) return;
+      final reporteDR = Reporte(
         id: '',
-        tim: widget.selectedTim,
-        olpn: 'DONACION',
+        olpn: 'INVENTARIO',
+        tim: widget.selectedInventario,
+        subdpto: productoSobrante.subdpto,
         sku: productoSobrante.sku,
+        ean: productoSobrante.ean,
+        descripcion: productoSobrante.descripcion,
+        casePack: productoSobrante.casePack,
+        uMedida: productoSobrante.uMedida,
+        precioVigente: productoSobrante.precioVigente,
+        costoPromedio: productoSobrante.costoPromedio,
         uEnviadas: 0,
         uRecibidas: unidadesAddTim ?? 0,
-        fechavencimiento: '',
-        observacion: _observacionSeleccionada ?? '',
-        modificadoPor: nombre ?? '',
+        fechavencimiento: '--',
+        isContable: productoSobrante.isContable,
+        marcaSensible: productoSobrante.marcaSensible,
+        modificadoPor: nombre,
+        observacion: 'AGREGADO',
       );
-      Reporte? result = await serviceDR.insertarDetalleReporte(
-          context, reporteDR, widget.selectedTim.toString());
-      if (result == null) {
-        Navigator.pop(dialogContext);
-        alert.showErrorDialog(
-            context, "Hubo un error al agregar el producto como sobrante");
-        return;
-      }
-      setState(() {
-        _productos.add(result);
-        _observacionSeleccionada = null;
-      });
+      await dataBaseH.insertReport(reporteDR);
+      await _reCargaProductos();
+      Navigator.pop(dialogContext);
       _actualizarFiltro();
-      Navigator.pop(dialogContext);
-      alert.showSuccessDialog(context, "Se agregó el producto correctamente.");
+      alert.showSuccessDialog(context, "Se agregó el producto correctamente");
     } catch (e) {
       Navigator.pop(dialogContext);
-      alert.showErrorDialog(
-          context, "Hubo un error al agregar el producto como sobrante");
+      alert.showErrorDialog(context, e.toString());
     }
   }
 
-  void _showReportDetails(BuildContext context, Reporte report) async {
-    final Reporte? result = await showDialog<Reporte>(
-      context: context,
-      builder: (BuildContext context) {
-        return ReportDetailsDialog(
-          report: report,
-          motivo: reportesInfo?.motivo ?? 'D',
-          onSave: () {},
-        );
-      },
-    );
-    if (result != null) {
-      final index = _productos.indexWhere((p) => p.id == result.id);
-      if (index != -1) {
-        setState(() {
-          _productos[index] = result;
-          _actualizarFiltro();
-        });
-      }
-    }
-  }
-
-  Future<bool> _mostrarConfirmacion() async {
-    return (await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text('Confirmación'),
-              content: Text(
-                  '¿Estás seguro de que quieres eliminar el registro de las donaciones?'),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('Cancelar'),
-                  onPressed: () {
-                    Navigator.of(context).pop(false);
-                  },
-                ),
-                TextButton(
-                  child: Text('Confirmar'),
-                  onPressed: () {
-                    _deleteDonacion(context, widget.selectedTim);
-                  },
-                ),
-              ],
-            );
-          },
-        )) ??
-        false;
-  }
-
-  void _deleteDonacion(BuildContext context, int tim) async {
-    final dialogContext = await loading.instance
-        .showLoadingDialog(context, "Eliminando Donación");
-    try {
-      final serviceR = ReporteService();
-      await serviceR.eliminarTim(context, tim);
-      Navigator.pop(dialogContext);
-      Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => InicioScreen(),
-          ));
-
-      alert.showSuccessDialog(context, "La donación se eliminó correctamente");
-    } catch (e) {
-      Navigator.pop(dialogContext);
-      alert.showErrorDialog(context, "Hubo un error al eliminar la donación");
-    }
-  }
-
-  void _showExportDialog(BuildContext context) async {
-    final TextEditingController _textController = TextEditingController();
-
+  void _showReportDetails(BuildContext context, Reporte report) {
     showDialog(
       context: context,
-      builder: (BuildContext dialogcontext) {
-        return AlertDialog(
-          title: const Text('Exportar Reporte'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('DONACIÓN: ${widget.selectedTim}'),
-              TextField(
-                controller: _textController,
-                decoration: const InputDecoration(
-                  labelText: 'Ingrese nombre de OT',
-                  hintText: 'Ingrese nombre de OT',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text(
-                  'Cancelar',
-                  style: TextStyle(color: Colors.white),
-                ),
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.red,
-                )),
-            ElevatedButton(
-                onPressed: () async {
-                  final String nombreUsuario = _textController.text;
-
-                  if (nombreUsuario.isNotEmpty) {
-                    await _cargarProductos();
-                    await exportToExcel(_productos, nombreUsuario);
-                    Navigator.of(dialogcontext).pop();
-                    alert.showSuccessDialog(
-                        context, "El archivo se exportó correctamente.");
-                  } else {
-                    alert.showErrorDialog(
-                        context, "Por favor, ingrese un nombre válido.");
-                  }
-                },
-                child: const Text(
-                  'Aceptar',
-                  style: TextStyle(color: Colors.white),
-                ),
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.green,
-                )),
-          ],
+      builder: (BuildContext context) {
+        return InventarioPereciblesDialog(
+          report: report,
+          motivo: 'IP',
+          onSave: () async {
+            await _reCargaProductos();
+            _actualizarFiltro();
+          },
         );
       },
     );
-  }
-
-  Future<String> exportToExcel(List<Reporte> reports, String nombre) async {
-    final dialogContext =
-        await loading.instance.showLoadingDialog(context, "Exportando a Excel");
-    var excel = Excel.createExcel();
-    excel.delete('Sheet1');
-    String formattedDate = DateFormat('dd-MM-yy').format(DateTime.now());
-    Sheet sheet = excel['Donaciones'];
-    sheet.appendRow([TextCellValue('')]);
-    sheet.appendRow(
-        [TextCellValue('FORMATO - SOLICITUD DE ENTREGA DE DONACIONES')]);
-    sheet.appendRow([TextCellValue('')]);
-    sheet.appendRow([TextCellValue('')]);
-    sheet.appendRow([TextCellValue('Colaborador: '), TextCellValue(nombre)]);
-    sheet.appendRow([TextCellValue('')]);
-    sheet.appendRow([TextCellValue('Fecha: '), TextCellValue(formattedDate)]);
-
-    sheet.appendRow([TextCellValue('')]);
-
-    sheet.appendRow([
-      TextCellValue('N'),
-      TextCellValue('SKU'),
-      TextCellValue('Descripción'),
-      TextCellValue('FECHA VENCIMIENTO'),
-      TextCellValue('CRITERIO DONACION'),
-      TextCellValue('UNIDAD MEDIDA'),
-      TextCellValue('CANTIDAD'),
-    ]);
-    int contador = 1;
-    for (var report in reports) {
-      sheet.appendRow([
-        TextCellValue(contador.toString()),
-        TextCellValue(report.sku),
-        TextCellValue(report.descripcion),
-        TextCellValue(report.fechavencimiento),
-        TextCellValue('BAP'),
-        TextCellValue(report.uMedida),
-        DoubleCellValue(report.uRecibidas),
-      ]);
-      contador++;
-    }
-
-    String fileName = 'REPORTE $formattedDate.xlsx';
-    try {
-      final downloadDirectory = Directory('/storage/emulated/0/Download');
-      final filePath = '${downloadDirectory.path}/$fileName';
-
-      if (!await downloadDirectory.exists()) {
-        await downloadDirectory.create(recursive: true);
-      }
-      File(filePath)
-        ..createSync(recursive: true)
-        ..writeAsBytesSync(excel.save()!);
-      return filePath;
-    } catch (e) {
-      return "Error $e";
-    } finally {
-      Navigator.pop(dialogContext);
-    }
-  }
-
-  void _showOptionsMenu(BuildContext context) async {
-    final result = await showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(300, 92, 0, 0),
-      items: [
-        PopupMenuItem(
-          value: 2,
-          child: Text('Nuevo Producto'),
-        ),
-        PopupMenuItem(
-          value: 3,
-          child: Text('Vaciar Donación'),
-        ),
-      ],
-    );
-
-    switch (result) {
-      case 1:
-        _showExportDialog(context);
-        break;
-      case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AgregarProductoScreen(),
-          ),
-        );
-        break;
-      case 3:
-        _mostrarConfirmacion();
-        break;
-    }
   }
 
   void _eliminarProducto(Reporte producto) async {
@@ -523,25 +312,226 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
 
     if (confirm == true) {
-      final dialogContext = await loading.instance
-          .showLoadingDialog(context, "Eliminando producto");
       try {
-        final serviceDR = DetalleReporteService();
-        await serviceDR.eliminarDetalleReporte(context, producto.id,
-            widget.selectedTim.toString()); // Asegúrate que esta función exista
+        await dataBaseH.deleteReporte(producto.sku, producto.tim!);
+        await _reCargaProductos();
 
-        setState(() {
-          _productos.removeWhere((p) => p.id == producto.id);
-        });
-        _actualizarFiltro();
-        Navigator.pop(dialogContext);
         alert.showSuccessDialog(
-            context, "El producto fue eliminado exitosamente.");
+            context, "El producto ha sido eliminado correctamente");
       } catch (e) {
-        Navigator.pop(dialogContext);
-        alert.showErrorDialog(context, "Hubo un error al eliminar el producto");
+        alert.showErrorDialog(
+            context, "El producto no pudo ser eliminado. Intente nuevamente.");
       }
     }
+  }
+
+  Future<void> exportAndShareCSV(List<Reporte> reports, String nombre) async {
+    try {
+      // Construir el contenido CSV
+      final buffer = StringBuffer();
+
+      // Encabezado informativo
+      buffer.writeln('Preventores:;$nombre');
+      buffer.writeln('Inventario:;${reportesInfo!.tim}');
+      buffer.writeln('Origen:;${reportesInfo!.localOrigen ?? ''}');
+      buffer.writeln('Fecha Registro:;${reportesInfo!.fechaEnvio ?? ''}');
+      buffer.writeln('');
+
+      // Cabeceras de columnas
+      buffer.writeln(
+        'INVENTARIO;EAN;SKU;Descripción;Unidades;Costo Promedio;Total Costo;SubDpto;Case Pack;Fecha Vencimiento',
+      );
+
+      // Filas de datos
+      for (var report in reports) {
+        final totalCosto = report.uRecibidas * report.costoPromedio;
+        // Escapar punto y coma dentro de descripciones por si acaso
+        final descripcion = report.descripcion.replaceAll(';', ',');
+        buffer.writeln(
+          '${report.tim};${report.ean};${report.sku};$descripcion;'
+          '${report.uRecibidas};${report.costoPromedio};$totalCosto;'
+          '${report.subdpto};${report.casePack};${report.fechavencimiento}',
+        );
+      }
+
+      // Guardar en directorio temporal de la app (no requiere permisos)
+      final dir = await getTemporaryDirectory();
+      final formattedDate =
+          DateFormat('dd-MM-yy_HH-mm-ss').format(DateTime.now());
+      final fileName = 'PERECIBLES_${reportesInfo!.tim}_$formattedDate.csv';
+      final filePath = '${dir.path}/$fileName';
+
+      final file = File(filePath);
+      // UTF-8 con BOM para que Excel lo abra correctamente con tildes
+      await file
+          .writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode(buffer.toString())]);
+
+      // Compartir usando el share sheet nativo
+      await Share.shareXFiles(
+        [XFile(filePath, mimeType: 'text/csv')],
+        subject: 'Inventario Perecibles - ${reportesInfo!.tim}',
+      );
+    } catch (e) {
+      alert.showErrorDialog(context, 'Error al compartir: $e');
+    }
+  }
+
+  Future<String> exportToExcel(List<Reporte> reports, String nombre) async {
+    var excel = Excel.createExcel();
+    Sheet sheet = excel['Sheet1'];
+
+    sheet.appendRow([TextCellValue('Preventores:'), TextCellValue(nombre)]);
+    sheet.appendRow(
+        [TextCellValue('Inventario:'), IntCellValue(reportesInfo!.tim)]);
+    sheet.appendRow(
+        [TextCellValue('Origen:'), TextCellValue(reportesInfo!.localOrigen!)]);
+    sheet.appendRow([
+      TextCellValue('Fecha Registro:'),
+      TextCellValue(reportesInfo!.fechaEnvio!)
+    ]);
+
+    sheet.appendRow([TextCellValue('')]);
+
+    sheet.appendRow([
+      TextCellValue('INVENTARIO'),
+      TextCellValue('EAN'),
+      TextCellValue('SKU'),
+      TextCellValue('Descripción'),
+      TextCellValue('Unidades'),
+      TextCellValue('Costo Promedio'),
+      TextCellValue('Total Costo'),
+      TextCellValue('SubDpto'),
+      TextCellValue('Case Pack'),
+      TextCellValue('Fecha Vencimiento'),
+    ]);
+
+    for (var report in reports) {
+      sheet.appendRow([
+        IntCellValue(report.tim!),
+        TextCellValue(report.ean),
+        TextCellValue(report.sku),
+        TextCellValue(report.descripcion),
+        DoubleCellValue(report.uRecibidas),
+        DoubleCellValue(report.costoPromedio),
+        DoubleCellValue(report.uRecibidas * report.costoPromedio),
+        TextCellValue(report.subdpto),
+        IntCellValue(report.casePack),
+        TextCellValue(report.fechavencimiento),
+      ]);
+    }
+
+    final formattedDate =
+        DateFormat('dd-MM-yy_HH-mm-ss').format(DateTime.now());
+
+    final fileName = 'PERECIBLES_${reportesInfo!.tim}_$formattedDate.xlsx';
+
+    try {
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+
+        final directory = Directory('/storage/emulated/0/Download');
+        final filePath = '${directory.path}/$fileName';
+
+        final file = File(filePath);
+        await file.writeAsBytes(excel.save()!);
+
+        return filePath;
+      }
+
+      // iOS fallback
+      final dir = await getApplicationDocumentsDirectory();
+      final filePath = '${dir.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(excel.save()!);
+
+      return filePath;
+    } catch (e) {
+      return 'Error: $e';
+    }
+  }
+
+  void _showOptionsMenu(BuildContext context) async {
+    final result = await showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(300, 92, 0, 0),
+      items: [
+        PopupMenuItem(
+          value: 1,
+          child: Text('Exportar Registro'),
+        ),
+        PopupMenuItem(
+          value: 2,
+          child: Text('Compartir como CSV'),
+        ),
+        PopupMenuItem(
+          value: 3,
+          child: Text('Eliminar Registro'),
+        ),
+      ],
+    );
+
+    switch (result) {
+      case 1:
+        if (nombre == null || nombre!.isEmpty) {
+          alert.showWarningDialog(
+            context,
+            "No se encontró el nombre del usuario",
+          );
+          return;
+        }
+
+        await exportToExcel(_productos, nombre!);
+
+        alert.showSuccessDialog(
+          context,
+          "El archivo se exportó correctamente a Descargas",
+        );
+        break;
+      case 2:
+        if (nombre == null || nombre!.isEmpty) {
+          alert.showWarningDialog(
+              context, "No se encontró el nombre del usuario");
+          return;
+        }
+        await exportAndShareCSV(_productos, nombre!);
+        break;
+      case 3:
+        _confirmarEliminarPallet(context);
+        break;
+    }
+  }
+
+  void _confirmarEliminarPallet(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Confirmar eliminación'),
+          content: Text(
+              '¿Estás seguro de que deseas eliminar este inventario? Esta acción no se puede deshacer.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Cierra el diálogo
+              },
+              child: Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              onPressed: () async {
+                Navigator.of(dialogContext).pop(); // Cierra el diálogo
+                await dataBaseH.deleteReporteTim(widget.selectedInventario);
+                Navigator.of(context)
+                    .pop(true); // ← devuelve `true` para indicar que se eliminó
+              },
+              child: Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -550,7 +540,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.verdeClaro,
           title: Text(
-            'Donaciones - ${widget.selectedTim.toString()}',
+            'PERECIBLES - ${widget.selectedInventario.toString()}',
             style: TextStyle(color: AppColors.white),
           ),
           leading: IconButton(
@@ -665,7 +655,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                   controller: controller,
                                   focusNode: focusNode,
                                   decoration: InputDecoration(
-                                    labelText: 'SubDept',
+                                    labelText: 'SubDpto',
                                     suffixIcon: IconButton(
                                       icon: _subDeptFiltro == null
                                           ? Icon(Icons.arrow_drop_down,
@@ -863,32 +853,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                           color: Colors.black87,
                                         ),
                                       ),
-                                      SizedBox(height: 10),
-                                      DropdownButtonFormField<String>(
-                                        value: _observacionSeleccionada,
-                                        decoration: InputDecoration(
-                                          labelText: 'Observación',
-                                          border: OutlineInputBorder(),
-                                          isDense: true,
-                                          contentPadding: EdgeInsets.symmetric(
-                                              vertical: 12, horizontal: 10),
-                                        ),
-                                        items: [
-                                          'Fecha vencimiento',
-                                          'Empaque roto'
-                                        ]
-                                            .map((label) => DropdownMenuItem(
-                                                  child: Text(label),
-                                                  value: label,
-                                                ))
-                                            .toList(),
-                                        onChanged: (value) {
-                                          setState(() {
-                                            _observacionSeleccionada = value;
-                                          });
-                                        },
-                                      ),
-                                      SizedBox(height: 10),
+                                      SizedBox(height: 5),
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,
@@ -921,14 +886,14 @@ class _ProductListScreenState extends State<ProductListScreen> {
                                                 await _insertarProductoSobrante(
                                                     _productoGenernal!);
 
-                                                _controllerAddTim.clear();
-                                                _productoGenernal = null;
-                                              } else {
-                                                alert.showErrorDialog(
-                                                  context,
-                                                  "Debe ingresar una cantidad válida para agregar el producto.",
-                                                );
-                                              }
+                                                  _controllerAddTim.clear();
+                                                  _productoGenernal = null;
+                                                } else {
+                                                  alert.showErrorDialog(
+                                                    context,
+                                                    "Debe ingresar una cantidad válida para agregar el producto.",
+                                                  );
+                                                }
                                             },
                                             label: const Text(
                                               'Agregar producto',

@@ -5,6 +5,7 @@ class ReporteTim {
   final String? localOrigen;
   final String? localDestino;
   final String? fechaEnvio;
+  final String? creadoPor;
   bool? estado;
   final String? motivo;
 
@@ -14,6 +15,7 @@ class ReporteTim {
       required this.placa,
       required this.localOrigen,
       required this.localDestino,
+      required this.creadoPor,
       required this.fechaEnvio,
       this.motivo});
 
@@ -24,7 +26,8 @@ class ReporteTim {
       'placa': placa,
       'localOrigen': localOrigen,
       'localDestino': localDestino,
-      'fechaEnvio': fechaEnvio,
+      'fechaEnvio': fechaEnvio, 
+      'creadoPor': creadoPor,
       'motivo': motivo,
     };
   }
@@ -37,6 +40,7 @@ class ReporteTim {
       localOrigen: map['localOrigen'] as String,
       localDestino: map['localDestino'] as String,
       fechaEnvio: map['fechaEnvio'] as String,
+      creadoPor: map['creadoPor'] as String,
       motivo: map['motivo'] as String,
     );
   }
@@ -48,6 +52,7 @@ class ReporteTim {
       localOrigen: json['origen'],
       localDestino: json['destino'],
       fechaEnvio: json['fechaEnvio'],
+      creadoPor: json['creadoPor'],
       motivo: json['motivo'],
     );
   }

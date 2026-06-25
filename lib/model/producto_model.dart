@@ -9,6 +9,8 @@ class Producto {
   final double costoPromedio;
   final double precioVigente;
   final int casePack;
+  final bool isContable;
+  final bool marcaSensible;
   final String uMedida;
 
   Producto({
@@ -21,6 +23,8 @@ class Producto {
     required this.proveedor,
     required this.casePack,
     required this.costoPromedio,
+    required this.isContable,
+    required this.marcaSensible,
     required this.precioVigente,
     required this.uMedida,
   });
@@ -38,6 +42,8 @@ class Producto {
       'casePack': casePack,
       'costoPromedio': costoPromedio,
       'precioVigente': precioVigente,
+      'isContable': isContable ? 1 : 0,
+      'marcaSensible': marcaSensible ? 1 : 0,
       'uMedida': uMedida,
     };
   }
@@ -54,6 +60,8 @@ class Producto {
       casePack: map['casePack'] ?? 1,
       costoPromedio: map['costoPromedio'] ?? 0,
       precioVigente: map['precioVigente'] ?? 0,
+      isContable: (map['isContable'] ?? 0) == 1,
+      marcaSensible: (map['marcaSensible'] ?? 0) == 1,
       uMedida: map['uMedida'] ?? '',
     );
   }
@@ -69,6 +77,9 @@ class Producto {
       costoPromedio: (json['costoPromedio'] as num).toDouble(),
       precioVigente: (json['precioVigente'] as num).toDouble(),
       casePack: json['casePack'],
+      isContable: json['isContable'] == true || json['isContable'] == 1,
+      marcaSensible:
+          json['marcaSensible'] == true || json['marcaSensible'] == 1,
       uMedida: json['uMedida'],
     );
   }

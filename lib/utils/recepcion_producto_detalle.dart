@@ -1,4 +1,5 @@
 import 'package:control_verde/model/reporte_model.dart';
+import 'package:control_verde/repository/user_repository.dart';
 import 'package:control_verde/screens/producto/nuevoproducto_screen.dart';
 import 'package:control_verde/services/detalle_reporte_service.dart';
 import 'package:control_verde/utils/app_colors.dart';
@@ -7,10 +8,14 @@ import 'package:flutter/material.dart';
 
 class ReportDetailsDialog extends StatefulWidget {
   final Reporte report;
+  final String motivo;
   final VoidCallback onSave;
 
   const ReportDetailsDialog(
-      {Key? key, required this.report, required this.onSave})
+      {Key? key,
+      required this.report,
+      required this.onSave,
+      required this.motivo})
       : super(key: key);
 
   @override
@@ -24,6 +29,8 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
 
   final TextEditingController _controller = TextEditingController();
   TextEditingController dateController = TextEditingController();
+  final UserRepository _userRepo = UserRepository();
+  String? nombre;
 
   String formatDoubleSmart(double value) {
     if (value % 1 == 0) {
@@ -36,6 +43,7 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
   @override
   void initState() {
     super.initState();
+    _cargarUsuario();
     dateController.text = widget.report.fechavencimiento.isEmpty
         ? ""
         : widget.report.fechavencimiento;
@@ -43,9 +51,30 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
     _controller.text = formatDoubleSmart(_count);
   }
 
+  Future<void> _desbloquearDetalle() async {
+    await DetalleReporteService().cambiarEstadoEdicion(
+      context,
+      widget.report.id,
+      false,
+      widget.report.tim.toString(),
+    );
+  }
+
   void _increment() {
     setState(() {
-      _count = _count + widget.report.casePack;
+      switch (widget.motivo) {
+        case 'D':
+          _count = _count + 1;
+          break;
+        case 'I':
+          _count = _count + widget.report.casePack;
+          break;
+        case 'T':
+          _count = _count + widget.report.casePack;
+          break;
+        default:
+          _count = _count + 1;
+      }
       _controller.text = formatDoubleSmart(_count);
     });
   }
@@ -76,12 +105,28 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
   @override
   void dispose() {
     dateController.dispose();
+    _desbloquearDetalle();
     super.dispose();
+  }
+
+  Future<void> _cargarUsuario() async {
+    final nombreUsuario = await _userRepo.getNombreUsuario();
+
+    if (!mounted) return;
+
+    setState(() {
+      nombre = nombreUsuario;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return WillPopScope(
+      onWillPop: () async {
+        await _desbloquearDetalle();
+        return true;
+      },
+      child: AlertDialog(
       title: Text(
         '${widget.report.descripcion}',
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -438,7 +483,8 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             TextButton(
-              onPressed: () {
+              onPressed: () async {
+                await _desbloquearDetalle();
                 Navigator.of(context).pop();
               },
               style: TextButton.styleFrom(
@@ -478,9 +524,11 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                       uRecibidas: double.tryParse(_controller.text) ??
                           widget.report.uRecibidas,
                       fechavencimiento: dateController.text,
+                      modificadoPor: widget.report.modificadoPor,
                       observacion: widget.report.observacion,
                     );
                     widget.onSave();
+                    await _desbloquearDetalle();
                     Navigator.pop(context, reporteActualizado);
                   }
                 },
@@ -488,7 +536,7 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                   backgroundColor: Colors.orange,
                 ),
                 child: const Text(
-                  'Nuevo Producto',
+                  'Nuevo',
                   style: TextStyle(color: Colors.white),
                 ),
               ),
@@ -512,14 +560,16 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
                   uRecibidas: double.tryParse(_controller.text) ??
                       widget.report.uRecibidas,
                   fechavencimiento: dateController.text,
+                  modificadoPor: nombre,
                   observacion: widget.report.observacion,
                 );
                 final dialogContext = await loading.instance
                     .showLoadingDialog(context, 'Actualizando Producto');
-                int result =
-                    await serviceDR.actualizarDatosDetalle(reporteActualizado, widget.report.tim.toString());
+                int result = await serviceDR.actualizarDatosDetalle(
+                    context, reporteActualizado, widget.report.tim.toString());
                 if (result > 0) {
                   widget.onSave();
+                  await _desbloquearDetalle();
                   Navigator.of(dialogContext).pop();
                   Navigator.pop(context, reporteActualizado);
                 } else {
@@ -539,6 +589,7 @@ class _DetalleReporteDialogState extends State<ReportDetailsDialog> {
           ],
         )
       ],
+    ),
     );
   }
 }

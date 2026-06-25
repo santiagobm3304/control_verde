@@ -58,8 +58,6 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
   // DateTime? _selectedDesdeDate;
   // DateTime? _selectedHastaDate;
 
-  List<String> _subDeptOptions = [];
-
   ///
   Map<String, String> subDeptMap = {
     'Carnes': 'J03',
@@ -117,8 +115,9 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
       final serviceDR = DetalleReporteService();
       final serviceR = ReporteService();
       final productos =
-          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
-      final reporteInfo = await serviceR.obtenerReporte(widget.selectedTim);
+          await serviceDR.obtenerProductosDeLaTim(context, widget.selectedTim);
+      final reporteInfo =
+          await serviceR.obtenerReporte(context, widget.selectedTim);
 
       setState(() {
         _productosFaltantes = productos.where((item) {
@@ -132,10 +131,6 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
         _productosFiltrados = (tipoFiltro == null || tipoFiltro == 0)
             ? _productosFaltantes
             : _productosSobrantes;
-        _subDeptOptions = _productosFiltrados
-            .map((item) => item.subdpto) // Extraer los subdepartamentos
-            .toSet() // Eliminar duplicados
-            .toList(); // Conviertir de nuevo a lista
         reportesInfo = reporteInfo;
       });
     } catch (error) {
@@ -149,7 +144,7 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
     try {
       final serviceDR = DetalleReporteService();
       final productos =
-          await serviceDR.obtenerProductosDeLaTim(widget.selectedTim);
+          await serviceDR.obtenerProductosDeLaTim(context, widget.selectedTim);
       setState(() {
         _productosFaltantes = productos.where((item) {
           return item.uEnviadas > item.uRecibidas;
@@ -162,10 +157,6 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
         _productosFiltrados = (tipoFiltro == null || tipoFiltro == 0)
             ? _productosFaltantes
             : _productosSobrantes;
-        _subDeptOptions = _productosFiltrados
-            .map((item) => item.subdpto) // Extraer los subdepartamentos
-            .toSet() // Eliminar duplicados
-            .toList(); // Conviertir de nuevo a lista
       });
     } catch (error) {
       print('Error al cargar productos: $error');
@@ -178,6 +169,7 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
       builder: (BuildContext context) {
         return ReportDetailsDialog(
           report: report,
+          motivo: reportesInfo?.motivo ?? 'T',
           onSave: () async {
             _recargarProductos();
           },
@@ -373,7 +365,7 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
           " " +
           codigoDestino +
           "_" +
-          tiendaDestino; 
+          tiendaDestino;
     } else {
       asunto = "DISCREPANCIA_" +
           dateBitacora +
@@ -388,14 +380,14 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
     }
 
     var rowIndex = sheet.maxRows;
-    List<String> headers = [
-      'FECHA ENVÍO',
-      'FECHA RECEPCIÓN',
-      'CÓDIGO DE TIENDA',
+    List<String> headersFaltante = [
+      'FECHA\nENVÍO',
+      'FECHA\nRECEPCIÓN',
+      'CÓDIGO\nDE\nTIENDA',
       'TIENDA',
       'ORIGEN',
       'MÓVIL',
-      'EMPRESA DE TRANSPORTE',
+      'EMPRESA\nDE\nTRANSPORTE',
       'CONDUCTOR',
       'ASUNTO',
       'TIM',
@@ -404,18 +396,35 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
       'SKU',
       'EAN',
       'DESCRIPCIÓN DE SKU',
-      'UNIDAD DE MEDIDA',
-      'CANTIDAD EN GUIA REMISION',
-      'CANTIDAD RECIBIDA',
+      'UNIDAD\nDE\nMEDIDA',
+      'CANTIDAD\nEN GUIA',
+      'CANTIDAD\nRECIBIDA',
       'DIFERENCIA',
-      'COSTO PROMEDIO',
-      'MONTO FALTANTE (S/)',
-      'RESPONSABLE DE GENERAR EL REQUERIMIENTO',
+      'COSTO\nPROMEDIO',
+      'MONTO\nFALTANTE\n(S/)',
+      'RESPONSABLE',
+      'RESOLUCIÓN'
     ];
-    headers.asMap().forEach((colIndex, headerText) {
+    List<String> headersSobrante = [
+      'FECHA\nENVÍO',
+      'FECHA\nRECEPCIÓN',
+      'TIM',
+      'SKU',
+      'DESCRIPCIÓN',
+      'SUBDPTO',
+      'CAJAS\nENVIADAS',
+      'UNIDADES\nENVIADAS',
+      'CAJAS\nRECIBIDAS',
+      'UNIDADES\nRECIBIDAS',
+      'SOBRANTE',
+      'COSTO\nPROMEDIO',
+      'TOTAL\nSOBRANTE',
+    ];
+    headersFaltante.asMap().forEach((colIndex, headerText) {
       var cell = sheet.cell(xcl.CellIndex.indexByColumnRow(
           columnIndex: colIndex, rowIndex: rowIndex));
       cell.value = xcl.TextCellValue(headerText);
+
       cell.cellStyle = styleCabecera;
     });
 
@@ -444,25 +453,22 @@ class _DiscrepanciasScreen extends State<DiscrepanciasScreen> {
         await DoubleCellValue(
             report.costoPromedio * (report.uRecibidas - report.uEnviadas)),
         TextCellValue(contador),
+        TextCellValue('PENDIENTE')
       ]);
     }
-
-    sheet1.appendRow([
-      TextCellValue('SKU'),
-      TextCellValue('Descripción'),
-      TextCellValue('Sub Departamento'),
-      TextCellValue('Cajas Enviadas'),
-      TextCellValue('Uni Enviadas'),
-      TextCellValue('Cajas Recibidas'),
-      TextCellValue('Uni Recibidas'),
-      TextCellValue('Uni Sobrantes'),
-      TextCellValue('Costo Promedio'),
-      TextCellValue('Costo Total'),
-    ]);
+    headersSobrante.asMap().forEach((colIndex, headerText) {
+      var cell = sheet1.cell(xcl.CellIndex.indexByColumnRow(
+          columnIndex: colIndex, rowIndex: rowIndex));
+      cell.value = xcl.TextCellValue(headerText);
+      cell.cellStyle = styleCabecera;
+    });
 
     for (var report in _productosSobrantes) {
       var cantidadSobrante = report.uRecibidas - report.uEnviadas;
       sheet1.appendRow([
+        TextCellValue(fechaEnvio),
+        TextCellValue(dateBitacora),
+        TextCellValue(tim),
         TextCellValue(report.sku),
         TextCellValue(report.descripcion),
         TextCellValue(report.subdpto),

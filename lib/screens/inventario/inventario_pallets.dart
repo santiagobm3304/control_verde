@@ -1,12 +1,12 @@
-
-
 import 'package:awesome_dialog/awesome_dialog.dart';
-import 'package:control_verde/controller/files/files_controller.dart';
-import 'package:control_verde/database/database_helper.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
+import 'package:control_verde/repository/user_repository.dart';
 import 'package:control_verde/screens/inventario/detalle_pallets.dart';
+import 'package:control_verde/services/reporte_service.dart';
+import 'package:control_verde/screens/qr/mobile_scanner.dart';
 
 import 'package:control_verde/utils/app_colors.dart';
+import 'package:control_verde/utils/loading.dart';
 import 'package:control_verde/widgets/cardInicio.dart';
 
 import 'package:flutter/material.dart';
@@ -24,30 +24,37 @@ class PalletsInventarioScreen extends StatefulWidget {
 
 class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
   List<int> reportesInfo = [];
-  int? _filtroTim;
   List<int> _reportesFiltrados = [];
+  TextEditingController _filtroController = TextEditingController();
+  UserRepository _userRepo = UserRepository();
 
   @override
   void initState() {
     super.initState();
-    _cargarTims();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarTims();
+    });
   }
 
   Future<void> _cargarTims() async {
     try {
-      final reporteInfo =
-          await DatabaseHelper.instance.getTimsByMotivo(widget.motivo);
+      final dialogContext = await loading.instance
+          .showLoadingDialog(context, 'Cargando Reportes');
+      final serviceR = ReporteService();
+      final reporteInfo = await serviceR.buscarPorMotivo(context, widget.motivo);
 
+      if (!mounted) return;
       setState(() {
         reporteInfo.sort();
         reportesInfo = reporteInfo;
-        _reportesFiltrados = reportesInfo;
+        _actualizarFiltro(_filtroController.text);
       });
+      Navigator.pop(dialogContext);
     } catch (error) {
       print('Error al cargar pallets: $error');
     }
   }
-  
+
   void _showOptionsMenu(BuildContext context) async {
     final result = await showMenu(
       context: context,
@@ -61,23 +68,16 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
     );
 
     switch (result) {
-      case 1:
-        final result = await FilesController.instance.handleFileSelection(context, 3, reportesInfo: reportesInfo);
-        if (result == true) {
-              _cargarTims();
-        } 
-        break;
       default:
         break;
     }
   }
 
-
   String fechaCreate = DateFormat('dd/MM/yy').format(DateTime.now());
 
   Future<List<int>> mostrarFormularioInventario(
       BuildContext context, String motivo) async {
-    final dbHelper = DatabaseHelper.instance;
+    final serviceR = ReporteService();
     final _formKey = GlobalKey<FormState>();
 
     TextEditingController fechaController =
@@ -85,11 +85,16 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
     TextEditingController timController = TextEditingController();
     TextEditingController localOrigenController =
         TextEditingController(text: 'Pacasmayo');
+    // Adición de tienda por defecto
+    TextEditingController destinoController =
+        TextEditingController(text: '352');
 
     return await showDialog<List<int>>(
           context: context,
           builder: (context) {
-            return AlertDialog(
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                return AlertDialog(
               title: Text("Agregar Pallet"),
               content: Form(
                 key: _formKey,
@@ -102,22 +107,51 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
                       decoration:
                           InputDecoration(labelText: "Fecha de Registro"),
                       validator: (value) =>
-                          value!.isEmpty ? "Ingrese la fecha" : null,
+                          (value == null || value.isEmpty) ? "Ingrese la fecha" : null,
                     ),
                     TextFormField(
                       controller: timController,
-                      decoration:
-                          InputDecoration(labelText: "Código de Pallet"),
+                      decoration: InputDecoration(
+                        labelText: "Código de Pallet",
+                        suffixIcon: IconButton(
+                          icon: Icon(Icons.qr_code_scanner, color: AppColors.verdeClaro),
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BarcodeScannerSimple(),
+                              ),
+                            );
+                            if (result != null) {
+                              setDialogState(() {
+                                timController.text = result;
+                              });
+                            }
+                          },
+                        ),
+                      ),
                       keyboardType: TextInputType.number,
-                      validator: (value) =>
-                          value!.isEmpty ? "Ingrese el Número de Pallet" : null,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return "Ingrese el Número de Pallet";
+                        }
+                        if (int.tryParse(value) == null) {
+                          return "El código debe ser numérico";
+                        }
+                        return null;
+                      },
                     ),
                     TextFormField(
                       controller: localOrigenController,
                       readOnly: true,
                       decoration: InputDecoration(labelText: "Ubicación"),
                       validator: (value) =>
-                          value!.isEmpty ? "Ingrese el local" : null,
+                          (value == null || value.isEmpty) ? "Ingrese el local" : null,
+                    ),
+                    TextFormField(
+                      controller: destinoController,
+                      readOnly: true,
+                      decoration: InputDecoration(labelText: "Tienda"),
                     ),
                   ],
                 ),
@@ -131,8 +165,10 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    if (_formKey.currentState!.validate()) {
+                    if (_formKey.currentState?.validate() ?? false) {
                       final nuevoTim = int.tryParse(timController.text);
+                      if (nuevoTim == null) return;
+
                       final existeTim =
                           reportesInfo.any((reporte) => reporte == nuevoTim);
 
@@ -148,18 +184,27 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
                           btnOkOnPress: () {},
                         ).show();
                       } else {
+                        final nombreResult = await _userRepo.getNombreUsuario();
+                        final nombre = (nombreResult == null || nombreResult.isEmpty) 
+                            ? "Usuario" 
+                            : nombreResult;
+
                         // No existe, se puede insertar
                         final reporteTim = ReporteTim(
                           fechaEnvio: fechaController.text,
                           placa: 'Inventario',
-                          tim: nuevoTim!,
-                          localDestino: 'Inventario',
+                          tim: nuevoTim,
+                          localDestino: destinoController.text,
                           localOrigen: localOrigenController.text,
+                          creadoPor: nombre,
                           motivo: motivo,
                         );
-                            await dbHelper.insertReporteTim(reporteTim);
-                        _cargarTims();
-                        Navigator.pop(context, reportesInfo);
+                        
+                        final success = await serviceR.crearReporte(context, reporteTim);
+                        if (success) {
+                          Navigator.pop(context); // Cierra modal
+                          _cargarTims(); // Recarga lista
+                        }
                       }
                     }
                   },
@@ -168,8 +213,98 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
               ],
             );
           },
+        );
+      },
+    ) ?? [];
+  }
+
+  void _actualizarFiltro(String value) {
+    setState(() {
+      _reportesFiltrados = value.isEmpty
+          ? reportesInfo
+          : reportesInfo.where((r) => r.toString().contains(value)).toList();
+    });
+  }
+
+  // =========================
+  // FLUJO DE ELIMINACIÓN
+  // =========================
+
+  Future<void> _ejecutarEliminacion(int tim) async {
+    final loader = loading.instance;
+    loader.showLoadingDialog(context, 'Eliminando Pallet');
+
+    try {
+      final serviceR = ReporteService();
+      final success = await serviceR.eliminarTim(context, tim);
+
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Cierra loading
+      }
+
+      if (success) {
+        _cargarTims();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pallet $tim eliminado exitosamente')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al eliminar: $e')),
+        );
+      }
+    }
+  }
+
+  Future<bool> _confirmarEliminacionInicial(int tim) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirmación'),
+            content: Text('¿Está seguro de eliminar el pallet $tim?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
         ) ??
-        [];
+        false;
+  }
+
+  Future<bool> _confirmarEliminacionFinal(int tim) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirmación final'),
+            content: Text(
+              'Va a eliminar el PALLET $tim.\n\nEsta acción no se puede deshacer.\nPresione Confirmar para continuar.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Confirmar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -182,7 +317,7 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add_rounded),
-            onPressed: () => mostrarFormularioInventario(context, 'I'),
+            onPressed: () => mostrarFormularioInventario(context, widget.motivo),
           ),
           IconButton(
             icon: const Icon(Icons.more_vert),
@@ -195,34 +330,61 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            DropdownButton<int>(
-              value: _filtroTim,
-              hint: const Text('Filtrar Pallet'),
-              isExpanded: true,
-              items: [
-                const DropdownMenuItem<int>(
-                  value: null,
-                  child: Text('Todos los Pallets'),
+            TextFormField(
+              controller: _filtroController,
+              decoration: InputDecoration(
+                labelText: 'Buscar Pallet',
+                hintText: 'Ingrese código o escanee QR',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _filtroController.text.isEmpty
+                        ? Icons.qr_code_scanner
+                        : Icons.close,
+                    color: _filtroController.text.isEmpty
+                        ? AppColors.verdeClaro
+                        : Colors.red,
+                  ),
+                  onPressed: () async {
+                    if (_filtroController.text.isEmpty) {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => BarcodeScannerSimple(),
+                        ),
+                      );
+                      if (result != null) {
+                        setState(() {
+                          _filtroController.text = result;
+                          _actualizarFiltro(result);
+                        });
+                      }
+                    } else {
+                      setState(() {
+                        _filtroController.clear();
+                        _actualizarFiltro("");
+                      });
+                    }
+                  },
                 ),
-                ...reportesInfo.map((reporte) {
-                  return DropdownMenuItem<int>(
-                    value: reporte,
-                    child: Text('Pallet ${reporte}'),
-                  );
-                }).toList(),
-              ],
+                border: const OutlineInputBorder(),
+              ),
               onChanged: (value) {
-                setState(() {
-                  _filtroTim = value;
-                  _reportesFiltrados = value == null
-                      ? reportesInfo
-                      : reportesInfo.where((r) => r == value).toList();
-                });
+                _actualizarFiltro(value);
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            const Text(
+              'TIP: Mantén presionado un pallet para eliminarlo.',
+              style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
             Expanded(
-              child: GridView.count(
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await _cargarTims();
+                },
+                child: GridView.count(
                 crossAxisCount: 2,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
@@ -232,6 +394,15 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
                       icon: Icon(Icons.data_usage,
                           size: 40, color: AppColors.verdeClaro),
                       title: 'PALLET  ${reporte}',
+                      onLongPress: (context) async {
+                        final confirmar1 = await _confirmarEliminacionInicial(reporte);
+                        if (!confirmar1) return;
+
+                        final confirmar2 = await _confirmarEliminacionFinal(reporte);
+                        if (!confirmar2) return;
+
+                        _ejecutarEliminacion(reporte);
+                      },
                       onTap: (context) async {
                         final result = await Navigator.push(
                           context,
@@ -242,19 +413,15 @@ class _PalletsInventarioScreen extends State<PalletsInventarioScreen> {
                         );
                         if (result == true) {
                           _cargarTims();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text('Pallet eliminado exitosamente')),
-                          );
                         }
                       });
                 }),
               ),
             ),
+          ),
           ],
         ),
       ),
     );
   }
-
 }

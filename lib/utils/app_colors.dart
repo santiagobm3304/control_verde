@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Colores principales
-  static const Color primary = Color(0xFF0D47A1); // Azul oscuro
+  static const Color primary = Color(0xFF2E7D32); // Verde oscuro profesional
   static const Color secondary = Color(0xFFFF5722); // Naranja
   static const Color black = Colors.black;
   static const Color white = Colors.white;
@@ -31,4 +31,13 @@ class AppColors {
   static const Color hintText = Color(0xFF757575); // Hint text
   static const Color disabledField =
       Color(0xFFE0E0E0); // Fondo de campos deshabilitados
+
+  //nuevos
+  static const Color primaryLight = Color(0xFF60AD5E);
+  static const Color primaryDark = Color(0xFF005005);
+
+  static const Color textDark = Color(0xFF1B1B1B);
+  static const Color textLight = Color(0xFFFFFFFF);
+
+  static const Color greySoft = Color(0xFFE0E0E0);
 }

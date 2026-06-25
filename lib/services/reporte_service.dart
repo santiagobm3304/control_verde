@@ -1,72 +1,112 @@
-import 'dart:convert';
+import 'package:control_verde/database/config.dart';
 import 'package:control_verde/model/reporteTim_model.dart';
-import 'package:http/http.dart' as http;
+import 'package:control_verde/utils/http.dart';
+import 'package:control_verde/utils/session_helper.dart';
+import 'package:flutter/material.dart';
 
 class ReporteService {
-  final String baseUrl =
-      'https://controlverdebackend.onrender.com/api/reportes';
+  String get baseUrl => AppConfig.apiBaseUrl + '/reportes';
+  final httpService = HttpService();
 
-  Future<ReporteTim?> crearReporte(ReporteTim reporteTim) async {
-    final url = Uri.parse('$baseUrl/add');
-    final headers = {'Content-Type': 'application/json'};
+  // 🔥 Agregamos el BuildContext como parámetro
+  Future<bool> crearReporte(
+    BuildContext context,
+    ReporteTim reporteTim,
+  ) async {
+    final url = Uri.parse('/reportes/add');
 
-    final body = jsonEncode({
+    final body = {
       'tim': reporteTim.tim,
       'placa': reporteTim.placa,
-      'localOrigen': reporteTim.localOrigen,
-      'localDestino': reporteTim.localDestino,
+      'origen': reporteTim.localOrigen,
+      'destino': reporteTim.localDestino,
       'fechaEnvio': reporteTim.fechaEnvio,
+      'creadoPor': reporteTim.creadoPor,
       'estado': true,
       'motivo': reporteTim.motivo
-    });
+    };
 
-    final response = await http.post(url, headers: headers, body: body);
+    final response = await httpService.peticionPOST(url.toString(), body);
 
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      print('Reporte creado con éxito: ${reporteTim.tim}');
-      return reporteTim;
-    } else {
-      print('Error al crear reporteTim: ${response.statusCode}');
-      print(response.body);
-      return null;
-    }
-  }
-
-  Future<List<int>> buscarPorMotivo(String motivo) async {
-    final uri = Uri.parse('$baseUrl/buscar?motivo=$motivo');
-
-    final response = await http.get(uri);
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
-      return data.map((tim) => (tim as num).toInt()).toList(); // 👈 cast seguro
-    } else {
-      throw Exception('Error al buscar reportes: ${response.statusCode}');
-    }
-  }
-
-  Future<ReporteTim?> obtenerReporte(int tim) async {
-    final url = Uri.parse('$baseUrl/reporte/$tim');
-
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return ReporteTim.fromJson(data['reporte']);
-    } else {
-      print('Error: ${response.statusCode}');
-      return null;
-    }
-  }
-
-  Future<bool> eliminarTim(int tim) async {
-    final url = Uri.parse('$baseUrl/deleterdr/$tim');
-    final response = await http.delete(url);
-    if (response.statusCode == 200) {
-      return true;
-    } else {
-      print('Error: ${response.statusCode}');
+    // 🔥 Manejo de sesión expirada
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(
+        context,
+        mensaje: response.mensaje,
+      );
       return false;
     }
+
+    if (response.success) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(response.mensaje)));
+      return true;
+    }
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(response.mensaje)));
+
+    return false;
   }
 
+  Future<List<int>> buscarPorMotivo(BuildContext context, String motivo) async {
+  final uri = Uri.parse('/reportes/buscar?motivo=$motivo');
+  final response = await httpService.peticionGET(uri.toString());
+
+  if (response.status == 403) {
+    await SesionHelper.cerrarSesion(context, mensaje: response.mensaje);
+    return [];
+  }
+
+  if (response.success) {
+    final List<dynamic> data = response.datos;
+    return data.map((tim) => (tim as num).toInt()).toList();
+  }
+
+  throw Exception(response.mensaje);
+}
+
+
+  Future<ReporteTim?> obtenerReporte(
+    BuildContext context,
+    int tim,
+  ) async {
+    final url = Uri.parse('/reportes/reporte/$tim');
+
+    final response = await httpService.peticionGET(url.toString());
+
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(
+        context,
+        mensaje: response.mensaje,
+      );
+      return null;
+    }
+
+    if (response.success) {
+      final data = ReporteTim.fromJson(response.datos);
+      return data;
+    }
+
+    return null;
+  }
+
+  Future<bool> eliminarTim(
+    BuildContext context,
+    int tim,
+  ) async {
+    final url = Uri.parse('/reportes/deleterdr/$tim');
+
+    final response = await httpService.peticionGET(url.toString());
+
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(
+        context,
+        mensaje: response.mensaje,
+      );
+      return false;
+    }
+
+    return response.success;
+  }
 }
