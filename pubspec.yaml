@@ -3,7 +3,7 @@ description: "Una aplicación para mejorar precisión y optimizar tiempos."
 
 publish_to: 'none'
 
-version: 2.2.1+1
+version: 2.5.0+1
 
 environment:
   sdk: ^3.6.1
@@ -26,6 +26,7 @@ dependencies:
   socket_io_client: ^2.0.3
   permission_handler: ^11.0.1
   audioplayers: ^5.2.0
+  device_info_plus: ^11.2.0
 
 dev_dependencies:
   flutter_test:
@@ -43,3 +44,8 @@ flutter:
   assets:
     - assets/
     - assets/audio/beep.mp3
+    - assets/audio/beep1.mp3
+    - assets/audio/error.mp3
+    - assets/audio/alert.mp3
+    - assets/audio/check.mp3
+

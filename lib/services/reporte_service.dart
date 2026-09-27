@@ -50,22 +50,41 @@ class ReporteService {
   }
 
   Future<List<int>> buscarPorMotivo(BuildContext context, String motivo) async {
-  final uri = Uri.parse('/reportes/buscar?motivo=$motivo');
-  final response = await httpService.peticionGET(uri.toString());
+    final uri = Uri.parse('/reportes/buscar?motivo=$motivo');
+    final response = await httpService.peticionGET(uri.toString());
 
-  if (response.status == 403) {
-    await SesionHelper.cerrarSesion(context, mensaje: response.mensaje);
-    return [];
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: response.mensaje);
+      return [];
+    }
+
+    if (response.success) {
+      final List<dynamic> data = response.datos;
+      return data.map((tim) => (tim as num).toInt()).toList();
+    }
+
+    throw Exception(response.mensaje);
   }
 
-  if (response.success) {
-    final List<dynamic> data = response.datos;
-    return data.map((tim) => (tim as num).toInt()).toList();
+  Future<List<ReporteTim>> buscarPorMotivov2(BuildContext context, String motivo) async {
+    final uri = Uri.parse('/reportes/buscarv2?motivo=$motivo');
+    final response = await httpService.peticionGET(uri.toString());
+
+    if (response.status == 403) {
+      await SesionHelper.cerrarSesion(context, mensaje: response.mensaje);
+      return [];
+    }
+
+    if (response.success) {
+      final List<dynamic> datosRaw = response.datos;
+      final List<ReporteTim> data = datosRaw
+          .map((json) => ReporteTim.fromJson(json as Map<String, dynamic>))
+          .toList();
+      return data;
+    }
+
+    throw Exception(response.mensaje);
   }
-
-  throw Exception(response.mensaje);
-}
-
 
   Future<ReporteTim?> obtenerReporte(
     BuildContext context,
