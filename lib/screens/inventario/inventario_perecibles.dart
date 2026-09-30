@@ -268,6 +268,7 @@ class _PereciblesDetalleScreen extends State<InventarioPerecibles> {
       await dataBaseH.insertReport(reporteDR);
       await _reCargaProductos();
       Navigator.pop(dialogContext);
+      _codigoController.clear();
       _actualizarFiltro();
       alert.showSuccessDialog(context, "Se agregó el producto correctamente");
     } catch (e) {
@@ -886,14 +887,14 @@ class _PereciblesDetalleScreen extends State<InventarioPerecibles> {
                                                 await _insertarProductoSobrante(
                                                     _productoGenernal!);
 
-                                                  _controllerAddTim.clear();
-                                                  _productoGenernal = null;
-                                                } else {
-                                                  alert.showErrorDialog(
-                                                    context,
-                                                    "Debe ingresar una cantidad válida para agregar el producto.",
-                                                  );
-                                                }
+                                                _controllerAddTim.clear();
+                                                _productoGenernal = null;
+                                              } else {
+                                                alert.showErrorDialog(
+                                                  context,
+                                                  "Debe ingresar una cantidad válida para agregar el producto.",
+                                                );
+                                              }
                                             },
                                             label: const Text(
                                               'Agregar producto',
